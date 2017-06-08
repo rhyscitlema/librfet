@@ -1,25 +1,31 @@
 /*
     expression.c
-
-    Let '>' to mean 'overwrites', then:
-    function parameter > user-defined variable/function > software-defined variable/function
 */
 
 #include <_stdio.h>
 #include <_string.h>
 #include <_texts.h>
-#include <expression.h>
 #include <component.h>
+#include <expression.h>
+#include "operations.h"
 
 
 
-static const Expression* get_the_item (const mchar* strExpr)
+static Expression *expression_new (const Expression *newExpr)
+{
+    Expression *expression = (Expression*)_malloc(sizeof(Expression)); memory_alloc("Expression");
+    if(newExpr!=NULL) *expression = *newExpr;
+    else printf("Software Error in expression_new(): newExpr==NULL.\n");
+    return expression;
+}
+
+static const Expression* get_the_item (const wchar* strExpr)
 {
     int j;
     for(j=0; character_type[j].ID; j++)
         if(0==strcmp22 (TWSF(character_type[j].ID), strExpr))
             return &character_type[j];
-    strcpy21(error_message, "Software Error: In get_the_item(): return==NULL.");
+    strcpy21(errorMessage(), "Software Error: In get_the_item(): return==NULL.");
     return NULL;
 }
 
@@ -27,14 +33,12 @@ static const Expression* get_the_item (const mchar* strExpr)
 static const Expression* precede_with_times (const lchar** strExpr, lchar** str)
 {
     astrcpy32(str, TWSF(Times_1));
-    (*str)->file = (*strExpr)->file;
-    (*str)->line = (*strExpr)->line;
-    (*str)->coln = (*strExpr)->coln;
+    lchar_copy(*str, *strExpr);
     return get_the_item (TWSF(Times_2));
 }
 
 
-static bool isCharacterType (mchar c)
+static bool isCharacterType (wchar c)
 {
     int j;
     if(c=='_') return false;
@@ -48,12 +52,12 @@ static bool isCharacterType (mchar c)
 /* size=0 if a space_type or character_type is found */
 static int extract_string (const lchar** strExpr, lchar** str)
 {
-    mchar c;
+    wchar c;
     int size=0;
     const lchar* start = *strExpr;
     while(1)
     {
-        c = (*strExpr)->mchr;
+        c = (*strExpr)->wchr;
         if(c==0 || isSpace(c)) break;
         if(isCharacterType(c)) break;
         if(c=='#') break; // if start of comment
@@ -75,29 +79,26 @@ const Expression* get_next_item (
                 const lchar** strExpr,
                 lchar** str,
                 const Expression *currentItem,
-                const Value* parameter,
-                Component *component,
-                Container *container)
+                Component *component)
 {
     int j, k, m, id, size;
-    mchar c;
-    mchar* str1;
+    wchar c;
     lchar* str2 = NULL;
     const lchar* start;
-    const mchar *dPt;
     int currentItem_type;
-    Component *tcomponent;
     Expression *nextItem=NULL;
     const Expression *tempItem;
 
     if(currentItem==NULL) currentItem_type=0;
     else currentItem_type = currentItem->type;
 
+    wchar* errormessage = errorMessage();
+
 
     // Task 1: skip the spaces
     while(1)
     {
-        c = (*strExpr)->mchr;
+        c = (*strExpr)->wchr;
         if(c==0) // if end of expression
         { lchar_free(*str); *str=NULL; return NULL; }
         if(!isSpace(c) && c!='#') break;
@@ -111,42 +112,42 @@ const Expression* get_next_item (
 
 
     // Task 3: check if the next item is a number
-    dPt = TWSF(DecimalPoint);
-    if(c==*dPt && isDigit((*strExpr)->next->mchr))
-    { set_error_message (CST21("Error in \\1 at \\2:\\3:\r\nNumber must not begin with a decimal point."), *strExpr); GNI_RETURN(NULL) }
-
-    if(isDigit(c))
+    if(isDigit(c) || (c=='.' && isDigit((*strExpr)->next->wchr)))
     {
         if((currentItem_type & CLOSEBRACKET))
             GNI_RETURN(precede_with_times(strExpr,str))
 
-        j=0; if(c=='0') { c = (*strExpr)->next->mchr; if(c=='b' || c=='o' || c=='x') j=1; }
+        j=0;
+        if(c=='0')
+        {   c = (*strExpr)->next->wchr;
+            if(c=='b' || c=='o' || c=='x') j=1;
+        }
         while(1)
         {
-            c = (*strExpr)->mchr;
-            if(c!=*dPt && (j ? !isAlpNu(c) : !isDigit(c))) break;
+            c = (*strExpr)->wchr;
+            if(c!='.' && (j ? !isAlpNu(c) : !isDigit(c))) break;
             (*strExpr) = (*strExpr)->next; size++;
         }
-        str1 = error_message + 1000;
-        strcpy23S (str1, start, size);
         astrcpy33S (str, start, size);
 
-        Value t = StrToVal(str1);
-        if(t.type)
-        {   *(Value*)number_type.param = t;
+        wchar* mstr = ErrStr0;
+        strcpy23S (mstr, start, size);
+        value t = StrToVal(mstr);
+
+        if(getType(t))
+        {   number_type.constant = t;
             GNI_RETURN(&number_type)
         }
         else
-        {   strcpy22(error_message+1000, error_message);
-            set_error_message (CST21("Error in \\1 at \\2:\\3:\r\n\\5"), *str, error_message+1000);
+        {   set_message(errormessage, L"Error in \\1 at \\2:\\3 on '\\4':\r\n\\5", *str, getNotval(t));
             GNI_RETURN(NULL)
         }
     }
 
 
     // Task 4: check if the next item is a character_type
-    m = 0;
-    for(j = 0; ; j++)
+    m=0;
+    for(j=0; ; j++)
     {
         id = character_type[j].ID;
         if(id==0) break;
@@ -181,131 +182,132 @@ const Expression* get_next_item (
         GNI_RETURN(nextItem)
     }
 
-    if(c==*TWSF(DecimalPoint))
+    // Task 5: check if next item is of the form .comp_name for the container.component call
+    if(c=='.')
     {
         start = *strExpr;
         (*strExpr) = (*strExpr)->next;          // skip '.'
-        size = extract_string(strExpr, str);    // get component name
+        size = extract_string(strExpr, str);    // get comp_name
         if(size==0)
-        {   set_error_message (CST21("Error in \\1 at \\2:\\3:\r\nExpected a name directly after '.'."), start);
+        {   set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nExpected a name directly after '.'.", start);
             GNI_RETURN(NULL)
         }
         astrcpy33S(str, start, size+1); // get '.comp_name'
         nextItem = &contcall_type;
-        nextItem->component = component;
 
-        for(start = *strExpr; isSpace(start->mchr); start = lchar_next(start));
-        if(start->mchr == *TWSF(Opened_Bracket_1)) // if next will be '('
+        // check if there is a '(' after component_name
+        for(start = *strExpr; isSpace(start->wchr); start = lchar_next(start));
+        if(start->wchr == '(')
              nextItem->type = AFUNCTION;
         else nextItem->type = AVARIABLE;
         GNI_RETURN(nextItem)
     }
 
 
-    // Task 4: check if the next item is a string
-    if(c==*TWSF(DoubleQuote))
+    // Task 6: check if the next item is a string
+    if(c=='"')
     {
-        // if opening DoubleQuote '"' has been found
+        // if opening '"' has been found
         start = (*strExpr)->next;
         size = 0;
         bool escape=0;
+        lchar* lstr = (lchar*)errormessage;
         while(true)
         {
             (*strExpr) = (*strExpr)->next;
-            c = (*strExpr)->mchr;
-            if(!escape && c=='#')
+            c = (*strExpr)->wchr;
+            if(escape && c=='#')
             {   (*strExpr) = lchar_next(*strExpr);
-                c = (*strExpr)->mchr;
+                c = (*strExpr)->wchr;
             }
             if(!escape && c=='\\') { escape=1; continue; }
 
-            if(!escape && c==*TWSF(DoubleQuote))
+            if(!escape && c=='"')
             {
-                // if closing DoubleQuote '"' has been found
+                // if closing '"' has been found
                 (*strExpr) = (*strExpr)->next; // skip it
-                astrcpy32S (str, error_message, size);
-                (*str)->file = start->file;
-                (*str)->line = start->line;
-                (*str)->coln = start->coln;
-                GNI_RETURN(&userstring_type)
+                astrcpy33S(str, lstr, size);
+                GNI_RETURN(&string_type)
             }
             if(c==0) // if end of content
             {
-                // end reached without finding a DoubleQuote
-                astrcpy32 (str, TWSF(DoubleQuote));
-                (*str)->file = (*strExpr)->file;
-                (*str)->line = (*strExpr)->line;
-                (*str)->coln = (*strExpr)->coln;
-                set_error_message (CST21("Error in \\1 at \\2:\\3:\r\nExpected a closing '\\4'."), *str);
+                // end reached without finding a closing '"'
+                astrcpy31 (str, "\"");
+                lchar_copy(*str, *strExpr);
+                set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nExpected a closing '\\4'.", *str);
                 GNI_RETURN(NULL)
             }
-            error_message[size++] = c;
+            lstr[size++] = (**strExpr);
+            lstr[size-1].next = &lstr[size]; // NOTE: no 'prev' is set as 'assumed' as not needed.
             escape = 0;
         }
     }
 
-    // Task 5: collect the next item as a string and put inside 'str'
+    // Task 7: collect the next item as a string and put inside 'str'
     size = extract_string (strExpr, str);
 
-    // Task 7: check if the next item is an opr_str_type (a named operator)
-    for(j=0; opr_str_type[j].ID != 0; j++)
-        if(0==strcmp23 (TWSF(opr_str_type[j].ID), *str))
-            GNI_RETURN(&opr_str_type[j])
+    // Task 8: check if the next item is an opr_word_type (a named operator)
+    for(j=0; opr_word_type[j].ID != 0; j++)
+        if(0==strcmp23 (TWSF(opr_word_type[j].ID), *str))
+            GNI_RETURN(&opr_word_type[j])
 
     // Task 9: this portion is used only by component_extract() in component.c
-    if(parameter==NULL && component==NULL && container==NULL) GNI_RETURN(&variable_type)
+    if(component==NULL) GNI_RETURN(&variable_type)
 
-    // Task 8: check if '*' must be placed before the next item
+    // Task 10: check if '*' must be placed before the next item
     if(currentItem_type & ALEAVE)
     {
         *strExpr = lchar_goto (*strExpr, -size);
         GNI_RETURN(precede_with_times(strExpr,str))
     }
 
-    // Task 9: check if next item is the current_type
+    // Task 11: check if next item is the current_type
     if(0==strcmp31(*str, "current"))
     {
         for(tempItem = currentItem; tempItem != NULL; tempItem = tempItem->parent)
-            if(tempItem->evaluate == opr_replace)
+            if(tempItem->ID == Replacement)
                 GNI_RETURN(&current_type)
     }
 
-    // Task 10: check if next item is a function parameter
-    if(valueSt_get_position ((int*)parameter_type.param, parameter, *str))
+    // Task 12: check if next item is a function parameter
+    if(valueSt_get_position ((int*)parameter_type.param, c_para(component), *str))
         GNI_RETURN(&parameter_type)
 
-    // Task 12: check if next item is a user-defined variable or function
-    tcomponent = component_find (container, *str);
-    if(tcomponent == NULL)
+    // Task 13: check if next item is a user-defined variable or function
+    Component *tcomponent = component_find(c_container(component), *str, errormessage, 0);
+    if(!tcomponent)
     {
-        strcpy22 (error_message+500, error_message);
-        set_error_message (CST21("Error in \\1 at \\2:\\3:\r\n\\5"), *str, error_message+500);
+        Component *globalcomp = component_find(container_find(0, CST31("|GLOBAL.MFET"), 0,0,0), *str, 0,0);
+        if(globalcomp && c_access(globalcomp) > ACCESS_PRIVATE) tcomponent = globalcomp;
     }
-    else
+    if(tcomponent)
     {
-        tcomponent = component_parse (tcomponent, container);
+        tcomponent = component_parse(tcomponent);
         if(tcomponent)
         {
-            if(tcomponent->parameter1==NULL && tcomponent->parameter2==NULL)
+            if(c_para(tcomponent)==NULL)
                  nextItem = &variable_type;
             else nextItem = &function_type;
-            nextItem->component = tcomponent;
+            nextItem->call_comp = tcomponent;
             depend_add (component, tcomponent);
             GNI_RETURN(nextItem)
         }
     }
 
-    // Task 8: check if the next item is an outsider_type (like the time 't')
-    j = outsider_getID (*str);
+    // Task 14: check if the next item is an outsider_type (like the time 't')
+    j = outsider_getID(*str);
     if(j>0)
-    {   outsider_type.ID = j;
+    {   SET_OUTSIDER_ID(&outsider_type, j);
+        if(j & OUTSIDER_ISA_FUNCTION)
+             outsider_type.type = SkipClimbUp | AFUNCTION;
+        else outsider_type.type = SkipClimbUp | AVARIABLE;
         GNI_RETURN(&outsider_type)
     }
 
-    // Task 7: check if the next item is a string_type (a named constant or function)
-    for(j=0; string_type[j].ID != 0; j++)
-        if(0==strcmp23 (TWSF(string_type[j].ID), *str))
-            GNI_RETURN(&string_type[j])
+    // Task 15: check if the next item is a word_type (a named constant or function)
+    for(j=0; word_type[j].ID != 0; j++)
+        if(0==strcmp23 (TWSF(word_type[j].ID), *str))
+            GNI_RETURN(&word_type[j])
 
     GNI_RETURN(NULL)
 }
@@ -337,9 +339,9 @@ static Expression *insertNew (Expression *current, const Expression *newItem)
     if(newItem->type & CLOSEBRACKET)
     {
         /* step 5: delete the '(' node */
-        if(current->prevChild != NULL)
-        {   current->prevChild->nextChild = current->headChild;
-            current->headChild->prevChild = current->prevChild; // may not be necessary
+        if(current->prevSibling != NULL)
+        {   current->prevSibling->nextSibling = current->headChild;
+            current->headChild->prevSibling = current->prevSibling;
         }
         else current->parent->headChild = current->headChild;
         current->headChild->parent = current->parent;
@@ -347,7 +349,7 @@ static Expression *insertNew (Expression *current, const Expression *newItem)
 
         node = current->parent;
         current->headChild = NULL;          // this line is to make sure that
-        current->prevChild = NULL;
+        current->prevSibling = NULL;
         expression_remove (current);        // only this 'current' node is removed
 
         /* step 6: Set the 'current node' to be the parent node */
@@ -366,21 +368,21 @@ static Expression *insertNew (Expression *current, const Expression *newItem)
         {
             if(newItem->type & SkipClimbUp)
             {
-                current->lastChild->nextChild = node;
-                node->prevChild = current->lastChild;
+                current->lastChild->nextSibling = node;
+                node->prevSibling = current->lastChild;
             }
             else
             {
-                node->prevChild = current->lastChild->prevChild;
+                node->prevSibling = current->lastChild->prevSibling;
 
-                if(node->prevChild != NULL)             // if current node has more than one child node.
-                    node->prevChild->nextChild = node;  // Notice the replacement done on this line.
+                if(node->prevSibling != NULL)               // if current node has more than one child node.
+                    node->prevSibling->nextSibling = node;  // Notice the replacement done on this line.
                 else current->headChild = node;
 
                 current->lastChild->parent = node;
                 node->headChild = current->lastChild;
                 node->lastChild = current->lastChild;
-                node->headChild->prevChild = NULL;
+                node->headChild->prevSibling = NULL;
             }
         }
         current->lastChild = node;
@@ -393,27 +395,16 @@ static Expression *insertNew (Expression *current, const Expression *newItem)
 
 
 
-#define PE_RETURN(ret) { expression_remove(root); lchar_free(str); return ret; }
-
-Expression *parseExpression (const lchar* strExpr,
-                             const Value* parameter,
-                             Component *component,
-                             Container *container)
+Expression *parseExpression (const lchar* strExpr, Component *component)
 {
     lchar* str=NULL;
-    const mchar* mstr;
-    mchar bracketOpened[100];
+    const wchar* mstr;
+    wchar bracketOpened[100];
     int bracketOpenedCount = 0;
     const Expression *nextItem;
     const Expression *currentItem;
     Expression *root=NULL, *current;
-
-    if(strExpr==NULL) return NULL;
-    strcpy21(error_message, "parseExpression() is started.\n");
-
-    while(isSpace(strExpr->mchr)) strExpr = lchar_next(strExpr);
-    if(strExpr->mchr==0) // if strExpr has no non-space character
-    { set_error_message (TWST(Empty_Expression), strExpr); PE_RETURN(NULL) }
+    assert(strExpr!=NULL);
 
     nextItem = get_the_item (TWSF(Opened_Bracket_1));
     if(nextItem==NULL) return NULL;
@@ -423,70 +414,76 @@ Expression *parseExpression (const lchar* strExpr,
     current = root;
     currentItem = root;
 
+    wchar* errormessage = errorMessage();
     while(1)
     {
-        nextItem = get_next_item (&strExpr, &str, currentItem, parameter, component, container);
+        nextItem = get_next_item (&strExpr, &str, currentItem, component);
         if(nextItem==NULL)
         {
-            if(strExpr->mchr==0 && str==NULL) break; // if end of expression
-            PE_RETURN(NULL)  // else an error occured while getting next item
+            if(strExpr->wchr==0 && str==NULL) break; // if end of expression
+            current=NULL; break;  // else an error occured while getting next item
         }
 
         // This portion is used only by component_extract() in component.c
-        if((parameter==NULL && component==NULL && container==NULL)
+        if(component==NULL
         && !(nextItem->type & OPENBRACKET) && !(nextItem->type & CLOSEBRACKET)
         && !(nextItem->type & ACOMMA) && !(nextItem->type & AVARIABLE))
-        { set_error_message (TWST(IsNot_ValueStructure), str); PE_RETURN(NULL) }
+        { set_message(errormessage, TWST(IsNot_ValueStructure), str); current=NULL; break; }
 
         //if(0==strcmp(str, "|")) do something else;
-        if(nextItem->type & OPENBRACKET) bracketOpened [bracketOpenedCount++] = str->mchr;
+        if(nextItem->type & OPENBRACKET) bracketOpened [bracketOpenedCount++] = str->wchr;
         if(nextItem->type & CLOSEBRACKET)
         {
             bracketOpened[99] = '\0';
             mstr = &bracketOpened[98];
             if(bracketOpenedCount > 0)
             {   bracketOpened[98] = OpenedToClosedBracket (bracketOpened [--bracketOpenedCount]);
-                if(*mstr != str->mchr)
-                { set_error_message (TWST(Bracket_Match_Invalid), str, mstr); PE_RETURN(NULL) }
+                if(*mstr != str->wchr)
+                { set_message(errormessage, TWST(Bracket_Match_Invalid), str, mstr); current=NULL; break; }
             }
-            else{ bracketOpened[98] = ClosedToOpenedBracket (str->mchr);
-                  set_error_message (TWST(Bracket_Match_None), str, mstr); PE_RETURN(NULL) }
+            else{ bracketOpened[98] = ClosedToOpenedBracket (str->wchr);
+                  set_message(errormessage, TWST(Bracket_Match_None), str, mstr); current=NULL; break; }
         }
 
         if(!(nextItem->previous & currentItem->type))   // if invalid syntax
-        { set_error_message (TWST(Invalid_Expression_Syntax), str); PE_RETURN(NULL) }
+        { set_message(errormessage, TWST(Invalid_Expression_Syntax), str); current=NULL; break; }
 
         current = insertNew (current, nextItem);
-        if(current == NULL) PE_RETURN(NULL)
-        if(current->evaluate == opr_replace) current->component = component;
+        if(!current) break;
+        if(!current->component)
+            current->component = component;
 
-        if(nextItem->type & CLOSEBRACKET) currentItem = nextItem;
+        if(nextItem->type & CLOSEBRACKET)
+            currentItem = nextItem;
         else
         {   currentItem = current;
             if(current->name==NULL) { current->name = str; str=NULL; }
         }
     }
 
-    if(bracketOpenedCount > 0) // if there is an opened bracket not yet closed
+    if(!current);
+
+    else if(bracketOpenedCount > 0) // if there is an opened bracket not yet closed
     {
         if(bracketOpenedCount==1)
              mstr = TWST(Lacking_Bracket);
         else mstr = TWST(Lacking_Brackets);
-        set_error_message (mstr, strExpr, TIS2(0,bracketOpenedCount));
-        PE_RETURN(NULL)
+        set_message(errormessage, mstr, strExpr, TIS2(0,bracketOpenedCount));
+        current=NULL;
     }
-
-    if(!(currentItem->type & ALEAVE)) // if invalid end of expression
-    { set_error_message (TWST(Invalid_Expression_End), strExpr); PE_RETURN(NULL) }
-
-    current = root->headChild;
-    root->headChild = NULL;
-    current->parent = NULL;
-
-    //expression_tree_print (current);
-    strcpy21(error_message, "parseExpression() is done.\n");
-
-    PE_RETURN(current)
+    else if(!(currentItem->type & ALEAVE)) // if invalid end of expression
+    {
+        set_message(errormessage, TWST(Invalid_Expression_End), strExpr);
+        current=NULL;
+    }
+    else
+    {   current = root->headChild;
+        root->headChild = NULL;
+        current->parent = NULL;
+    }
+    expression_remove(root);
+    lchar_free(str);
+    return current;
 }
 
 
@@ -495,35 +492,36 @@ Expression *parseExpression (const lchar* strExpr,
 static void traverse_recursively (const Expression *expression, int spaces)
 {
     int i;
-    mchar mstr[20];
+    wchar mstr[20];
     const Expression *expr;
     if(expression==NULL) return;
 
+    // print the headChild first
     expr = expression->headChild;
     traverse_recursively (expr, spaces+10);
 
-    expr = expression;
     for(i=0; i < spaces; i++) putc2(' ');
 
-    if(expr->headChild != NULL)
+    if(expr)
     {
-        printf("p=%d s='%s'", expr->precedence, CST13(expr->name));
-        if(expr->name==NULL) printf(" ?:?");
-        else printf(" %d:%d", expr->name->line, expr->name->coln);
+        expr = expression;
+        printf("p=%d ", expr->precedence);
+        if(expr->name) printf("s='%s' %d:%d", CST13(expr->name), expr->name->line, expr->name->coln);
         printf("\n");
+
+        expr = expression->headChild;
+        for(expr = expr->nextSibling; expr != NULL; expr = expr->nextSibling)
+            traverse_recursively (expr, spaces+10);
     }
     else
     {
-        VstToStr ((Value*)expr->param, mstr, 0,-1,-1,-1);
+        expr = expression;
+        VstToStr ((value*)expr->param, mstr, 0,-1,-1,-1);
         printf("v='%s' s='%s'", CST12(mstr), CST13(expr->name));
         if(expr->name==NULL) printf(" ?:?");
         else printf(" %d:%d", expr->name->line, expr->name->coln);
         printf("\n");
     }
-    expr = expression->headChild;
-    if(expr==NULL) return;
-    for(expr = expr->nextChild; expr != NULL; expr = expr->nextChild)
-        traverse_recursively (expr, spaces+10);
 }
 
 // Perform tree traversal given the starting node

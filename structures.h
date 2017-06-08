@@ -3,25 +3,54 @@
 /*
     structures.h
 
-    Container > Component > Expression > Value
+    Component > Container | Function > Expression > value
 */
 
+#include <_math.h>
 #include <_string.h>
 #include <_malloc.h>
-#include <_math.h>
+#include <_texts.h>
+#include <assert.h>
+#include <list.h>
+#include <avl.h>
+
+void mfet_init (int stack_size);
+void mfet_clean ();
+
+int stackSize();
+value* mainStack();
+
+
+typedef struct _GeneralArg
+{   struct _Component* caller;
+    wchar* message;
+    const value* argument;
+} GeneralArg;
+
+typedef struct _ExprCallArg
+{   GeneralArg* garg;
+    struct _Expression* expression;
+    value* stack;
+} ExprCallArg;
 
 
 
 typedef struct _Expression
 {
-    // name of expression (name of operator or function or variable ...)
+    // used for expression tree structure
+    struct _Expression *parent;
+    struct _Expression *headChild;
+    struct _Expression *lastChild;
+    struct _Expression *nextSibling;
+    struct _Expression *prevSibling;
+
+    // name of expression (name of operator or component or string)
     lchar* name;
 
-    // used as outsider ID for when expression is an outsider.
-    // also used to store the TWSF-ID of an operation.
-    int ID;
+    // used to store the ID of an operation.
+    enum ID_TWSF ID;
 
-    // type of the expression (AOPERATOR, ACONSTANT, AVARIABLE, ...)
+    // type of the expression (AOPERATOR, ACONSTANT, AFUNCTION, ...)
     int type;
 
     // what the previous item type must be for valid syntax
@@ -30,18 +59,20 @@ typedef struct _Expression
     // precedence level, used when adding a new expression
     int precedence;
 
-    // function to call so to evaluate this expression
-    Value* (*evaluate) (struct _Expression *expression, const Value* argument);
+    bool (*evaluate) (ExprCallArg eca);
 
-    // used only for when expression is a call to a component
-    // that is, a call to a user-defined variable or function
+    // the component that owns this expression
     struct _Component *component;
 
+    // used for when expression is a call to a component
+    struct _Component *call_comp;
+
     // used to store the position of a parameter.
+    // used as outsider ID for when expression is an outsider.
     int param[20];
 
     // used for when expression evaluates to a constant
-    Value* constant;
+    value constant;
 
     // used to store first-time evaluation information
     int info;
@@ -51,119 +82,128 @@ typedef struct _Expression
     // = 1 => independent
     char independent;
 
-    // used only in expression_destroy() to mark as deleted
+    // used by expression_destroy()
     bool deleted;
-
-    // used for expression tree structure
-    struct _Expression *parent;
-    struct _Expression *nextChild;
-    struct _Expression *prevChild;
-    struct _Expression *headChild;
-    struct _Expression *lastChild;
-    struct _Expression *next;
 } Expression;
 
-#define expression_evaluate(expr,argument) ((expr==NULL) ? NULL : expr->evaluate(expr,argument))
+#define expression_evaluate(eca) (eca.expression!=NULL ? eca.expression->evaluate(eca) : false)
 
 
 
-typedef struct _Depend
+enum STATE {
+    ISPARSE, // I have been parsed
+    DOPARSE, // I have changed, parse me
+    NOPARSE, // I have not changed, do not parse me
+    DELETED, // I have not been found in my container
+    CREATED  // I have just been created
+};
+
+enum ACCESS {
+    ACCESS_PRIVATE,     // in same container
+    ACCESS_ENCLOSED,    // have same parents
+    ACCESS_PROTECTED,   // have same grandpa
+    ACCESS_PUBLIC,      // anyone anywhere
+    ACCESS_REPLACE
+};
+
+static inline const char* access2str (enum ACCESS access)
 {
-    struct _Component* component;
-    struct _Depend *prev, *next;
-} Depend;
+    switch(access) {
+        case ACCESS_PRIVATE:   return "Private";
+        case ACCESS_ENCLOSED:  return "Enclosed";
+        case ACCESS_PROTECTED: return "Protected";
+        case ACCESS_PUBLIC:    return "Public";
+        case ACCESS_REPLACE:   return "Replace";
+        default: return "NULL";
+    }
+}
 
 
+
+// Note: it is not possible to create separate
+// structures: Function and Container, both
+// inheriting from Component, just because
+// of the possibility of one converting to
+// the other in the process of parsing.
+typedef struct _Component Container;
 
 typedef struct _Component
 {
     lchar* name1;
     lchar* name2;
 
-    lchar* strExpr1;
-    lchar* strExpr2;
+    lchar* text1;
+    lchar* text2;
 
-    Value* cname2;
+    bool isaf1; // is a function or
+    bool isaf2; // else a container
 
-    Value* parameter1;
-    Value* parameter2;
+    enum ACCESS access1;
+    enum ACCESS access2;
 
-    Depend* dependOnMe;
-    Depend* depend1;
-    Depend* depend2;
+    enum STATE state;
 
+    int replace; // count of replace-access overrides
+
+    Container *parent;
+
+
+    // Component as a Function
     Expression* root1;
     Expression* root2;
 
-    bool isprivate1;
-    bool isprivate2;
+    value* para1; // parameter
+    value* para2;
 
-    int state;
+    List depOnMe;
+    List depend1;
+    List depend2;
 
-    struct _Container *container;
-    struct _Component *nextToParse;
-    struct _Component *prev, *next;
+    value* result1;
+    value* result2;
+
+
+    // Component as a Container
+    struct _Component *type1;
+    struct _Component *type2;
+
+    lchar* mfet1;
+    lchar* mfet2;
+    void* owner;
+
+    AVLT inherits;  // inheriting components
+    AVLT inners;    // inner components
+
+    int replacement_count;
+    const Expression* replacement[20];
+
 } Component;
 
-
-
-typedef struct _Container
-{
-    lchar* name;
-    lchar* type;
-    lchar* text;
-    Value* result;
-    void* parent; // whoever owns this container
-
-    int quickedit;
-    int replacement_count;
-    bool replacement_exist;
-    const Expression* replace[20];
-
-    struct _Component *first, *mainc;
-    struct _Container *prev, *next;
-} Container;
+#define c_type(c)       ((c)->type2==NULL ? (c)->type1      : (c)->type2  )
+#define c_name(c)       ((c)->name2==NULL ? (c)->name1      : (c)->name2  )
+#define c_text(c)       ((c)->name2==NULL ? (c)->text1      : (c)->text2  )
+#define c_para(c)       ((c)->name2==NULL ? (c)->para1      : (c)->para2  )
+#define c_isaf(c)       ((c)->name2==NULL ? (c)->isaf1      : (c)->isaf2  )
+#define c_root(c)       ((c)->name2==NULL ? (c)->root1      : (c)->root2  )
+#define c_mfet(c)       ((c)->name2==NULL ? (c)->mfet1      : (c)->mfet2  )
+#define c_access(c)     ((c)->name2==NULL ? (c)->access1    : (c)->access2)
+#define c_result(c)     ((c)->name2==NULL ? (c)->result1    : (c)->result2)
+#define c_depend(c)     ((c)->name2==NULL ? (c)->depend1    : (c)->depend2)
+#define c_container(c)  (c_isaf(c) ? (c)->parent : (c))
 
 
 
-extern Expression *expression_new (const Expression *newExpr);
-extern void expression_remove (Expression *expression);
-extern Value* expression_to_valueSt (Expression *expression);
+void expression_remove (Expression *expression);
+value* expression_to_valueSt (Expression *expression);
 
+void component_destroy (Component *component);
+void component_remove (AVLT* tree);
 
-extern Depend *depend_new (Component *component);
-extern void depend_destroy (Depend *depend);
-extern void depend_remove (Depend* depend_head);
+void inherits_obtain (Component *component, List* list, wchar* mstr, const char* text, int indent);
+bool inherits_remove (Component *component);
 
-extern void depend_print (const Depend* depend_head);
-extern int  depnd_count (const Depend* depend_head);
-
-
-extern Component *component_new ();
-extern void component_destroy (Component *component);
-extern void component_remove (Component* component_head);
-#define GCN(c) ((c)->name1 ? (c)->name1 : (c)->name2)
-
-
-extern Container *container_new ();
-extern void container_destroy (Container *container);
-extern void container_remove (Container *container);
-
-
-extern void expression_print (const char* text, const Expression *expression);
-extern void component_print  (const char* text, const Component  *component );
-extern void container_print  (const char* text, const Container  *container );
-
-
-mchar* dependency_get_traverse (const char* text,   // can be NULL
-                                const int spaces,   // typical is 4
-                                const Component *component,
-                                mchar* output);     // can be NULL
-
-mchar* valueSt_get_traverse (const int spaces, const Value* valueSt, mchar* output);
-
-
-extern void structures_print_count ();
+void expression_print (const char* text, int indent, const Expression *expression);
+void component_print  (const char* text, int indent, const Component  *component );
 
 #endif
 

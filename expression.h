@@ -7,30 +7,53 @@
 #include "structures.h"
 
 
+/* Defined in expression.c and used by
+   expression.c and component.c only.
+*/
 const Expression* get_next_item (
                 const lchar** strExpr,
                 lchar** str,
                 const Expression *currentItem,
-                const Value* parameter,
-                Component *component,
-                Container *container);
+                Component *component);
 
-Expression *parseExpression (const lchar* strExpr,
-                             const Value* parameter,
-                             Component *component,
-                             Container *container);
+
+/* The function name below is perhaps the only VETERAN
+   to the whole calculator software source code. Essentially,
+   it has been there ever since the very first implementation,
+   and has survived all the countless source code revisions!
+   When will it finally go down... I wonder...?!!
+   This all started with the discovery of a new parsing algorithm:
+   http://rhyscitlema.com/algorithms/expression-parsing-algorithm
+*/
+Expression *parseExpression (const lchar* strExpr, Component *component);
 
 void expression_tree_print (const Expression *expression);
 
 
-/* also used in parseExpression by expression.c */
-Value* opr_replace (Expression* expression, const Value* argument);
+/* Called only at the end of a successfull evaluation.
+   Placed here only so to be available to outsider.c.
+*/
+void INDEPENDENT (Expression* expression, value* stack, int independent);
 
-/* also used in graphplotter3d by graph_edit() */
-Value* opr_equal_type4 (Expression* expression, const Value* argument);
-Value* opr_comma       (Expression* expression, const Value* argument);
-Value* set_function    (Expression* expression, const Value* argument);
-Value* set_userstring  (Expression* expression, const Value* argument);
+
+static inline bool check_first_level (const value* in, int Cols, wchar* errormessage, const lchar* name)
+{
+    value v;
+    int cols;
+
+    if(!in) return 0;
+    v = *in;
+    cols = getType(v)==aSeptor ? getSeptor(v).cols : 1;
+
+    if(cols!=Cols)
+    {
+        set_message( errormessage,
+            L"Error in \\1 at \\2:\\3 on '\\4':\r\nExpect \\5 arguments but \\6 found.",
+            name, TIS2(0,Cols), TIS2(1,cols));
+        return 0;
+    }
+    else return 1;
+}
 
 
 #endif

@@ -6,42 +6,39 @@
 
 #include "structures.h"
 
+extern List* containers_list;
 
-/* Create a new container and add to the linked-list of containers. */
-/* Parse the container content into a linked-list of components. */
-bool container_add (Container** container_ptr, const lchar* name, const lchar* content);
+int pointer_compare (const void* key1, const void* key2, const void* arg);
 
 
-/* check for and return container if it exists */
-bool container_check (const Container* container);
+/* NOTE: directly after call, set name=NULL and text=NULL */
+Container* container_parse (Container* parent, lchar* name, lchar* text);
 
 /* find and return a pointer to a container structure given its name */
-Container *container_find (const lchar* name);
+Container *container_find (Container* current, const lchar* pathname, wchar* errormessage, bool skipFirst, bool fullAccess);
 
 /* find and return a pointer to a component structure given its name */
-Component *component_find (Container* container, const lchar* name);
+Component *component_find (Container* current, const lchar* name, wchar* errormessage, bool skipFirst);
+
+/* get and return the full path name of given container */
+const wchar* container_path_name (const Container* container);
 
 
 /* parse the string-expression of a component into an expression tree */
-Component *component_parse (Component *component, Container *container);
+Component *component_parse (Component *component);
 
-/* evaluate the expression tree of a component, given its function arguments */
-Value* component_evaluate (Component *component,
-                           const Value* argument,   // in case of a function call
-                           const Value* result_vst);// 'expected' result structure
+/* evaluate the expression tree of a component */
+bool component_evaluate (ExprCallArg eca, Component *component,
+                         const value* result_vst); // 'expected' result structure.
 
-
-Depend* depend_find (Depend* depend, const Component *component);
 
 /* read: I 'component', am depending on 'depending' */
 void depend_add (Component* component, Component *depending);
 
 /* read: I 'depend', am not depended upon by 'component' */
-void depend_denotify (Depend* depend, const Component *component);
-
+void depend_denotify (List* depend, const Component *component);
 
 bool dependence_parse ();
-bool dependence_evaluate ();
 void dependence_finalise (bool success);
 
 
@@ -49,22 +46,11 @@ extern int evaluation_instance;
 extern Container* replacement_container;
 
 /* Record the replacement operator := */
-void replacement_record (Container *c, const Expression *replace);
+void replacement_record (Container *c, const Expression *replacement);
 
 /* Commit the replacement recorded */
 void replacement_commit (Container *c);
 
-
-// TODO: remove this getmfetc from here!
-inline static lchar* getmfetc (Container* container, const char* comp_name)
-{
-    lchar* name = NULL;
-    Expression* expr = NULL;
-    Component *comp = component_find(container, CST31(comp_name));
-    if(comp) expr = (comp->root2==NULL) ? comp->root1 : comp->root2;
-    if(expr) astrcpy33(&name, expr->name);
-    return name;
-}
 
 #endif
 

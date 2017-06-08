@@ -1,0 +1,67 @@
+# Makefile created by Rhyscitlema
+# Explanation of file structure available at:
+# http://rhyscitlema.com/applications/makefile.html
+
+OUTPUT_FILE = mfet
+
+OBJECT_FILES = main.o
+
+LIBALGO = ../algorithms
+LIB_STD = ../lib_std
+LIBMFET = .
+
+#-------------------------------------------------
+
+# C compiler
+CC = gcc
+
+# Linker
+LD = gcc
+
+# C compiler flags
+CC_FLAGS = -I$(LIBALGO) \
+           -I$(LIB_STD) \
+           -I$(LIBMFET) \
+           -Wall \
+           -pedantic \
+           $(CFLAGS)
+
+# linker flags
+LD_FLAGS = -L$(LIBALGO) \
+           -L$(LIB_STD) \
+           -L$(LIBMFET) \
+           $(LDFLAGS)
+
+# needed linker libs.
+# note: the order below matters
+LD_LIBS = -lmfet \
+          -l_std \
+          -lalgo \
+          -lm \
+          $(LDLIBS)
+
+#-------------------------------------------------
+
+make: $(OBJECT_FILES)
+	cd $(LIBALGO) && $(MAKE) CFLAGS+="-DLIB_STD -I$(LIB_STD)"
+	cd $(LIB_STD) && $(MAKE) CFLAGS+="-DCOMPLEX"
+	cd $(LIBMFET) && $(MAKE)
+	$(LD) $(OBJECT_FILES) $(LD_FLAGS) $(LD_LIBS) -o $(OUTPUT_FILE)
+
+# remove all created files
+clean:
+	cd $(LIBALGO) && $(MAKE) clean
+	cd $(LIB_STD) && $(MAKE) clean
+	cd $(LIBMFET) && $(MAKE) clean
+	$(RM) $(OUTPUT_FILE)
+
+#-------------------------------------------------
+
+INCLUDE_FILES = $(LIBALGO)/*.h \
+                $(LIB_STD)/*.h \
+                $(LIBMFET)/*.h
+
+# compile .c files to .o files
+%.o: %.c $(INCLUDE_FILES)
+	$(CC) $(CC_FLAGS) -c -o $@ $<
+

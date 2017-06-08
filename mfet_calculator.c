@@ -1,5 +1,0 @@
-#include "source/operations/operations.c"
-#include "source/structures.c"
-#include "source/expression.c"
-#include "source/component.c"
-#include "source/mfet.c"
