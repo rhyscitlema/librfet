@@ -106,7 +106,7 @@ static void component_finalise (Component *component, bool success)
             lchar_free(component->name1); component->name1 = component->name2; component->name2 = NULL;
             lchar_free(component->text1); component->text1 = component->text2; component->text2 = NULL;
             value_free(component->para1); component->para1 = component->para2; component->para2 = NULL;
-            lchar_free(component->mfet1); component->mfet1 = component->mfet2; component->mfet2 = NULL;
+            lchar_free(component->rfet1); component->rfet1 = component->rfet2; component->rfet2 = NULL;
 
             component->isaf1 = component->isaf2;
             component->access1 = component->access2;
@@ -142,7 +142,7 @@ static void component_finalise (Component *component, bool success)
             lchar_free(component->name2); component->name2 = NULL;
             lchar_free(component->text2); component->text2 = NULL;
             value_free(component->para2); component->para2 = NULL;
-            lchar_free(component->mfet2); component->mfet2 = NULL;
+            lchar_free(component->rfet2); component->rfet2 = NULL;
 
             component->isaf2 = component->isaf1;
             component->access2 = component->access1;
@@ -212,7 +212,7 @@ typedef struct _InnerFunction {
 } InnerFunction;
 
 typedef struct _InnerContainer {
-    lchar* mfet;
+    lchar* rfet;
     enum ACCESS access;
 } InnerContainer;
 
@@ -262,10 +262,10 @@ static bool component_extract (const lchar* input, List* innerFunctions, List* i
             }
 
             /* Step2.0: Obtain component as an inner-container */
-            if(0==strcmp31(str,"\\mfet"))
+            if(0==strcmp31(str,"\\rfet"))
             {
                 if(input->wchr != '{')
-                { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nExpected '{' directly after \\mfet.", input); error=true; break; }
+                { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nExpected '{' directly after \\rfet.", input); error=true; break; }
 
                 size = 1;
                 start = input = input->next; // skip '{'
@@ -284,14 +284,14 @@ static bool component_extract (const lchar* input, List* innerFunctions, List* i
                 astrcpy33S (&str, start, size);
                 input = input->next; // skip '}'
 
-                icont.mfet = str; str=NULL;
+                icont.rfet = str; str=NULL;
                 icont.access = access;
                 list_tail_push(innerContainers, list_new(&icont, sizeof(icont)));
                 continue;
             }
 
             if(str->wchr=='\\')
-            { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nOn '\\4': expected \\mfet{ only.", str); error=true; break; }
+            { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nOn '\\4': expected \\rfet{ only.", str); error=true; break; }
 
             if(!(nextItem->type & AVARIABLE))
             { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nOn '\\4': expected a component name.", str); error=true; break; }
@@ -355,7 +355,7 @@ static bool component_extract (const lchar* input, List* innerFunctions, List* i
             input = lchar_next(input);
         size = strlen3S(start, input);
         if(input->wchr != 0) input = input->next; // skip EndOfStatement
-        astrcpy33S (&str, start, size?size:1); // str = MFET
+        astrcpy33S (&str, start, size?size:1); // str = RFET
         if(size==0) str->wchr=0;
 
         /* Step 7: iterative tree-traversal to record sub-components of a component's result-structure */
@@ -511,7 +511,7 @@ static bool component_insert (Container* container, List* innerFunctions, List* 
     while(icont != NULL && !error)
     {
         access = icont->access;
-        Container *cont = container_parse(container, NULL, icont->mfet);
+        Container *cont = container_parse(container, NULL, icont->rfet);
         icont  = (InnerContainer*)list_next(icont);
         if(!cont) { error=true; break; }
         else cont->access2 = access;
@@ -526,7 +526,7 @@ static bool component_insert (Container* container, List* innerFunctions, List* 
     }
     while(icont != NULL)
     {
-        lchar_free(icont->mfet);
+        lchar_free(icont->rfet);
         icont = (InnerContainer*)list_next(icont);
     }
     if(!error)
@@ -603,12 +603,12 @@ Container* container_parse (Container* parent, lchar* name, lchar* text)
 
             if(container) { success=true; break; }
 
-            wchar* mtext=NULL;
-            if(!Openfile (CST23(name), &mtext, 0)) break;
+            Array2 wtext={0};
+            if((wtext = FileOpen2(CST23(name), wtext)).size<=0) break;
             // do not set error message, use that from container_find()
 
-            astrcpy32(&text, mtext);
-            mchar_free(mtext);
+            astrcpy32(&text, wtext.data);
+            wchar_free(wtext.data);
 
             set_line_coln_source(text, 1, 1, CST23(name));
 
@@ -649,7 +649,7 @@ Container* container_parse (Container* parent, lchar* name, lchar* text)
             else container->type2 = cont_type;
         }
 
-        container->mfet2 = text; text=NULL;
+        container->rfet2 = text; text=NULL;
         success = true;
         break;
     }
@@ -895,7 +895,7 @@ void replacement_commit (Container *c)
 
     if(c==NULL) return;
     if(!list_find(containers_list, NULL, pointer_compare, &c)) return; // TODO: try again to find the bug for when this line is removed
-    assert(c->mfet1!=NULL);
+    assert(c->rfet1!=NULL);
     wchar* errormessage = errorMessage();
 
     for(i=0; i < c->replacement_count; i++)
@@ -905,7 +905,7 @@ void replacement_commit (Container *c)
         if(name==NULL) { printf("Software Error in replacement_commit(): c->replacement[%d]->name == NULL\n", i); continue; }
         start = NULL;
         stop = NULL;
-        for(lstr = c->mfet1; lstr->wchr != 0; lstr = lstr->next)
+        for(lstr = c->rfet1; lstr->wchr != 0; lstr = lstr->next)
             if(lstr->line == name->line && lstr->coln == name->coln) break;
 
         if(lstr->wchr==0) { set_message(errormessage, L"Software Error in '\\1' at \\2:\\3:\r\nOn '\\4': replacement_commit() is not done.", name); puts2(errormessage); continue; }
@@ -938,7 +938,7 @@ void replacement_commit (Container *c)
 
         // Step4: Setup the start
         if(start->prev != NULL) start->prev->next = lstr;
-        if(c->mfet1 == start) c->mfet1 = lstr;
+        if(c->rfet1 == start) c->rfet1 = lstr;
         lstr->prev = start->prev;
 
         // Step5: Setup the stop
@@ -970,7 +970,7 @@ int stackSize() { return _stackSize; }
 value* mainStack() { return _mainStack; }
 wchar* errorMessage() { return _errorMessage; }
 
-void mfet_init (int stack_size)
+void rfet_init (int stack_size)
 {
     if(stack_size < 10000) stack_size = 10000;
 
@@ -982,7 +982,7 @@ void mfet_init (int stack_size)
     SET_VSTXX();
 }
 
-void mfet_clean()
+void rfet_clean()
 {
     // the order below matters
     component_destroy(RootContainer);

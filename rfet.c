@@ -1,8 +1,8 @@
 /*
-    mfet.c
+    rfet.c
 */
 
-#include <mfet.h>
+#include <rfet.h>
 #include <expression.h>
 #include <component.h>
 #include <_texts.h>
@@ -10,8 +10,8 @@
 
 /******************************************************************************/
 
-const value* mfet_parse_and_evaluate (
-    const wchar* mfet_string,
+const value* rfet_parse_and_evaluate (
+    const wchar* rfet_string,
     const wchar* source_name,
     const value* result_vst)
 {
@@ -19,13 +19,13 @@ const value* mfet_parse_and_evaluate (
     strcpy21(source, "input");
     if(!source_name) source_name = source;
 
-    lchar* text=NULL; astrcpy32(&text, mfet_string);
+    lchar* text=NULL; astrcpy32(&text, rfet_string);
     set_line_coln_source(text, 1, 1, source_name);
 
-    MFET mfet = mfet_parse(NULL, text); text=NULL;
-    bool success = mfet_evaluate(mfet, NULL, result_vst);
+    RFET rfet = rfet_parse(NULL, text); text=NULL;
+    bool success = rfet_evaluate(rfet, NULL, result_vst);
 
-    mfet_remove(mfet);
+    rfet_remove(rfet);
     return success ? mainStack() : NULL;
 }
 
@@ -35,15 +35,15 @@ static bool container_check (const Container* container)
 {
     if(!container) return false;
     if(list_find(containers_list, NULL, pointer_compare, &container)) return true;
-    sprintf2(errorMessage(), L"MFET Error: container cannot be found.\r\n");
+    sprintf2(errorMessage(), L"RFET Error: container cannot be found.\r\n");
     return false;
 }
 
 /******************************************************************************/
 
-MFET mfet_parse (MFET mfet, lchar* text)
+RFET rfet_parse (RFET rfet, lchar* text)
 {
-    if(mfet && !container_check((Container*)mfet)) return false;
+    if(rfet && !container_check((Container*)rfet)) return false;
 
     if(isEmpty3(text,0))
     {   strcpy21(errorMessage(), "Empty input.");
@@ -53,7 +53,7 @@ MFET mfet_parse (MFET mfet, lchar* text)
     lchar* name=NULL;
     astrcpy32(&name, lchar_get_source(*text));
 
-    Container* parent = mfet ? ((Container*)mfet)->parent : NULL;
+    Container* parent = rfet ? ((Container*)rfet)->parent : NULL;
     Container* container = container_parse(parent, name, text); text=NULL;
     if(container && !dependence_parse()) container=NULL;
     dependence_finalise(container!=NULL);
@@ -62,13 +62,13 @@ MFET mfet_parse (MFET mfet, lchar* text)
 }
 
 
-bool mfet_evaluate (MFET mfet, const value* argument, const value* result_vst)
+bool rfet_evaluate (RFET rfet, const value* argument, const value* result_vst)
 {
-    Container *container = (Container*)mfet;
+    Container *container = (Container*)rfet;
     if(!container_check(container)) return false;
 
     GeneralArg garg = {
-        .caller = (Container*)mfet,
+        .caller = (Container*)rfet,
         .message = errorMessage(),
         .argument = argument
     };
@@ -79,13 +79,13 @@ bool mfet_evaluate (MFET mfet, const value* argument, const value* result_vst)
     };
     evaluation_instance++;
     replacement_container = container;
-    return component_evaluate(eca, (Component*)mfet, result_vst);
+    return component_evaluate(eca, (Component*)rfet, result_vst);
 }
 
 
-bool mfet_commit_replacement (MFET mfet)
+bool rfet_commit_replacement (RFET rfet)
 {
-    Container *container = (Container*)mfet;
+    Container *container = (Container*)rfet;
     if(!container_check(container)) return false;
     if(container->replacement_count==0) return false;
     replacement_commit(container);
@@ -93,14 +93,14 @@ bool mfet_commit_replacement (MFET mfet)
 }
 
 
-const wchar* mfet_get_container_text (MFET mfet)
+const wchar* rfet_get_container_text (RFET rfet)
 {
-    Container *container = (Container*)mfet;
+    Container *container = (Container*)rfet;
     if(!container_check(container)) return NULL;
-    return CST23(c_mfet(container));
+    return CST23(c_rfet(container));
 }
 
 
-void mfet_remove (MFET mfet)
-{ if(mfet) inherits_remove((Container*)mfet); }
+void rfet_remove (RFET rfet)
+{ if(rfet) inherits_remove((Container*)rfet); }
 

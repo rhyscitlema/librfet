@@ -2,9 +2,9 @@
 # Explanation of file structure available at:
 # http://rhyscitlema.com/applications/makefile.html
 
-OUTPUT_FILE = libmfet.a
+OUTPUT_FILE = librfet.a
 
-OBJECT_FILES = mfet.o \
+OBJECT_FILES = rfet.o \
                component.o \
                expression.o \
                structures.o \
@@ -12,7 +12,7 @@ OBJECT_FILES = mfet.o \
 
 LIBALGO = ../algorithms
 LIB_STD = ../lib_std
-LIBMFET = .
+LIBRFET = .
 
 #-------------------------------------------------
 
@@ -25,7 +25,7 @@ AR = ar
 # compiler flags
 CC_FLAGS = -I$(LIBALGO) \
            -I$(LIB_STD) \
-           -I$(LIBMFET) \
+           -I$(LIBRFET) \
            -Wall \
            -pedantic \
            $(CFLAGS)
@@ -48,7 +48,7 @@ clean:
 
 INCLUDE_FILES = $(LIBALGO)/*.h \
                 $(LIB_STD)/*.h \
-                $(LIBMFET)/*.h *.c
+                $(LIBRFET)/*.h *.c
 
 # compile .c files to .o files
 %.o: %.c $(INCLUDE_FILES)

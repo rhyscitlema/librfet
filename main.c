@@ -5,7 +5,7 @@
 #include <_stdio.h>
 #include <_string.h>
 #include <_texts.h>
-#include "mfet.h"
+#include "rfet.h"
 #include "component.h"
 #include "outsider_default.c"
 
@@ -39,12 +39,12 @@ bool wait_for_confirmation (const wchar* title, const wchar* message)
 int main (int argc, char** argv)
 {
     int verbose=0;
-    char input[1000];
+    char entry[1000];
     const wchar* source_name = NULL;
-    wchar* mfet_string = NULL;
+    Array2 input = {0};
     lchar* text = NULL;
-    MFET mfet = NULL;
-    mfet_init(1000000);
+    RFET rfet = NULL;
+    rfet_init(1000000);
 
     enum TYPE type = (argc==1) ? Enter : None;
     int i=0;
@@ -62,14 +62,14 @@ int main (int argc, char** argv)
         {
             while(true)
             {
-                printf("Enter MFET (q to quit): ");
-                if(!fgets(input, sizeof(input), stdin)) continue;
+                printf("Enter RFET (q to quit): ");
+                if(!fgets(entry, sizeof(entry), stdin)) continue;
 
-                if(input[0]=='\n' || input[0]=='\0') continue;
-                if(input[0]=='q') { type = None; break; }
+                if(entry[0]=='\n' || entry[0]=='\0') continue;
+                if(entry[0]=='q') { type = None; break; }
 
-                input[strlen(input)-1] = 0;     // set end of string
-                astrcpy21 (&mfet_string, input);    // copy string
+                entry[strlen(entry)-1] = 0;     // remove '\n' from end of string
+                astrcpy21 (&input.data, entry); // copy string
 
                 source_name = L"input";
                 break;
@@ -80,26 +80,27 @@ int main (int argc, char** argv)
         {
             if(verbose) printf("-----------------------------\r\n");
             source_name = L"input";
-            astrcpy21 (&mfet_string, argv[i]);
+            astrcpy21 (&input.data, argv[i]);
         }
         else if(type==File)
         {
             if(verbose) printf("_____________________________\r\n");
             source_name = get_name_from_path_name(NULL,CST21(argv[i]));
 
-            if(!Openfile(source_name, &mfet_string, NULL))
+            input.size=0;
+            if((input = FileOpen2(source_name, input)).size<1)
             {
                 printf("Error: file '%s' could not be opened.\r\n", argv[2]);
                 break;
             }
         }
 
-        astrcpy32(&text, mfet_string);
+        astrcpy32(&text, input.data);
         set_line_coln_source(text, 1, 1, source_name);
 
-        MFET tmfet = mfet_parse(mfet, text); text=NULL;
-        if(tmfet) mfet = tmfet;
-        if(mfet_evaluate(tmfet, NULL, NULL))
+        RFET trfet = rfet_parse(rfet, text); text=NULL;
+        if(trfet) rfet = trfet;
+        if(rfet_evaluate(trfet, NULL, NULL))
             VstToStr(mainStack(), errorMessage(), 4, -1, -1, -1);
             // put result inside the errorMessage global string
 
@@ -112,15 +113,15 @@ int main (int argc, char** argv)
                "The following are valid program calls:\r\n"
                "\r\n"
                "   1) <program> -e\r\n"
-               "      - The MFET is later entered then evaluated\r\n"
+               "      - The RFET is later entered then evaluated\r\n"
                "\r\n"
-               "   2) <program> -t <mfet>\r\n"
-               "      - The given text <mfet> is evaluated\r\n"
+               "   2) <program> -t <rfet>\r\n"
+               "      - The given text <rfet> is evaluated\r\n"
                "\r\n"
                "   3) <program> -f <name>\r\n"
                "      - The given file <name> is evaluated\r\n"
                "\r\n"
-               "   Example: <program> -t '1+1' -f example.mfet\r\n"
+               "   Example: <program> -t '1+1' -f example.rfet\r\n"
                "\r\n");
         for(i=0; i<argc; i++) printf("Argument[%d] = %s\r\n", i, argv[i]);
         printf("\r\n");
@@ -129,9 +130,9 @@ int main (int argc, char** argv)
 
     if(verbose) printf("\r\n");
     if(verbose==2) component_print(" |  ", 0, container_find(0,0,0,0,0));
-    mfet_clean();
+    rfet_clean();
     lchar_free(text);
-    mchar_free(mfet_string);
+    wchar_free(input.data);
     if(verbose) memory_print();
     return 0;
 }

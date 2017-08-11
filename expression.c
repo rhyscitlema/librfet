@@ -277,7 +277,7 @@ const Expression* get_next_item (
     Component *tcomponent = component_find(c_container(component), *str, errormessage, 0);
     if(!tcomponent)
     {
-        Component *globalcomp = component_find(container_find(0, CST31("|GLOBAL.MFET"), 0,0,0), *str, 0,0);
+        Component *globalcomp = component_find(container_find(0, CST31("|GLOBAL.RFET"), 0,0,0), *str, 0,0);
         if(globalcomp && c_access(globalcomp) > ACCESS_PRIVATE) tcomponent = globalcomp;
     }
     if(tcomponent)

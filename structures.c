@@ -104,8 +104,8 @@ void component_destroy (Component *component)
     list_free (&component->depend1);
     list_free (&component->depend2);
     list_free (&component->depOnMe);
-    lchar_free (component->mfet1);
-    lchar_free (component->mfet2);
+    lchar_free (component->rfet1);
+    lchar_free (component->rfet2);
     lchar_free (component->name1);
     lchar_free (component->name2);
     lchar_free (component->text1);

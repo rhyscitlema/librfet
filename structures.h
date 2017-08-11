@@ -14,8 +14,8 @@
 #include <list.h>
 #include <avl.h>
 
-void mfet_init (int stack_size);
-void mfet_clean ();
+void rfet_init (int stack_size);
+void rfet_clean ();
 
 int stackSize();
 value* mainStack();
@@ -167,8 +167,8 @@ typedef struct _Component
     struct _Component *type1;
     struct _Component *type2;
 
-    lchar* mfet1;
-    lchar* mfet2;
+    lchar* rfet1;
+    lchar* rfet2;
     void* owner;
 
     AVLT inherits;  // inheriting components
@@ -185,7 +185,7 @@ typedef struct _Component
 #define c_para(c)       ((c)->name2==NULL ? (c)->para1      : (c)->para2  )
 #define c_isaf(c)       ((c)->name2==NULL ? (c)->isaf1      : (c)->isaf2  )
 #define c_root(c)       ((c)->name2==NULL ? (c)->root1      : (c)->root2  )
-#define c_mfet(c)       ((c)->name2==NULL ? (c)->mfet1      : (c)->mfet2  )
+#define c_rfet(c)       ((c)->name2==NULL ? (c)->rfet1      : (c)->rfet2  )
 #define c_access(c)     ((c)->name2==NULL ? (c)->access1    : (c)->access2)
 #define c_result(c)     ((c)->name2==NULL ? (c)->result1    : (c)->result2)
 #define c_depend(c)     ((c)->name2==NULL ? (c)->depend1    : (c)->depend2)

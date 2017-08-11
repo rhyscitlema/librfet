@@ -2,7 +2,7 @@
     outsider_default.c
 
     Note:
-    I am needed by libmfet.
+    I am needed by librfet.
     There is no need to compile me independently,
     just #include me anywhere in main.c file.
     I am essentially just a 'template'.
