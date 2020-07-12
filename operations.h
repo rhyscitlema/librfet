@@ -37,7 +37,7 @@ enum OPER_INFO_MASK
 
 extern Expression char_type[80];   // char_type means it can be directly followed by any type (ex: +)
 extern Expression oper_type[10];   // oper_type means loaded as a word_type although is an operator (ex: mod)
-extern Expression word_type[70];   // word_type means it must be inbetween space_type or char_type (ex: pi)
+extern Expression word_type[80];   // word_type means it must be inbetween space_type or char_type (ex: pi)
 
 extern Expression constant_type;       // is a literal constant like 1, 23, 'c', "word"
 extern Expression compname_type;       // is a string obtained from component_path_name()

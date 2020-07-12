@@ -123,8 +123,7 @@ bool inherits_remove (Component *component)
 
 	str = strcpy21(str, "All will be removed.\r\n");
 
-	bool remove = list.size==1 ||
-		wait_for_confirmation(L"Confirm removal", message);
+	bool remove = list.size==1 || user_confirm(L"Confirm removal", message);
 	if(remove)
 	{
 		void* node = list_tail(&list);

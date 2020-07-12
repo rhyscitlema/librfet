@@ -366,14 +366,14 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
 			if(0==strcmp31(str,"\\rfet"))
 			{
 				if(sChar(input) != '{')
-				{ setErrorE(stack, L"Error at (%2,%3) in %4:\r\nExpected '{' directly after \\rfet.", input); break; }
+				{ setErrorE(stack, L"Error at (%|2s,%s) in %s:\r\nExpected '{' directly after \\rfet.", input); break; }
 
 				input = sNext(input);       // skip '{'
 				str.ptr = input.ptr;        // set start at after '{'
 				int brackets=1;
 				while(brackets)
 				{
-					if(strEnd3(input)) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nExpected a closing '}'.", input); break; }
+					if(strEnd3(input)) { setErrorE(stack, L"Error at (%|2s,%s) in %s:\r\nExpected a closing '}'.", input); break; }
 					wchar c = sChar(input);
 					if(c=='{') brackets++;  // TODO: also skip "...{..." and '{'
 					if(c=='}') brackets--;
@@ -415,7 +415,7 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
 				int brackets=1;
 				while(brackets)
 				{
-					if(strEnd3(input)) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nExpected a closing ')'.", input); break; }
+					if(strEnd3(input)) { setErrorE(stack, L"Error at (%|2s,%s) in %s:\r\nExpected a closing ')'.", input); break; }
 					wchar c = sChar(input);
 					if(c=='(') brackets++;
 					if(c==')') brackets--;
@@ -449,7 +449,7 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
 		inner.text = str;
 		list_tail_push(inners, list_new(&inner, sizeof(inner)));
 	}
-	return (*stack >> 28)!=VAL_MESSAGE; // return true if no error
+	return VTYPE(*stack)!=VALUE_MESSAGE; // return true if no error
 }
 
 
@@ -481,7 +481,7 @@ static bool check_access(value stack, int from, int to, const_Str3 name)
 {
 	if(from <= to) return true;
 	const_Str2 argv[3];
-	Str2 msg = (Str2)(stack+1000); // +1000 space reserved for result
+	Str2 msg = (Str2)(stack+10000); // +10000 space reserved for result
 	argv[1] = msg; msg = 1+strcpy21(msg, access2str(from));
 	argv[2] = msg; msg = 1+strcpy21(msg, access2str(to)); // 1+ so to skip '\0'
 	argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\nCannot downgrade access from %s to %s.";
@@ -553,13 +553,14 @@ static bool component_insert (value stack, Container* container, List* inners)
 				long size = 1+vSize(v); // 1+ since param[0] is a separate data
 				if(size >= SIZEOF(component->para2))
 				{
-					setErrorE(stack, L"Error at (%2,%3) in %4:\r\nFunction parameter is too long.", para);
+					setErrorE(stack, L"Error at (%|2s,%s) in %s:\r\nFunction parameter is too long.", para);
 					error=true; break;
 				}
 				const_value n=v;
 				while(n < param+size) // count the number of paras
 				{
-					if((*n >> 28)==VAL_VECTOR) n += 2; // skip vector header
+					if(VTYPE(*n)==VALUE_VECTOR)
+						n += 2; // skip vector header
 					else {
 						param[0]++; // count para
 						assert(isStr2(n));
@@ -671,7 +672,7 @@ static bool get_string_expr (value stack, const_Str3 strExpr, const_Str3* name)
 	long size = strlen3(*name);
 	if(size > MAX_NAME_LEN)
 	{
-		argv[0] = L"Error at (%2,%3) in %4:\r\nString of length %s is too long.";
+		argv[0] = L"Error at (%|2s,%s) in %s:\r\nString of length %s is too long.";
 		argv[1] = TIS2(0,size);
 		setMessageE(stack, 0, 2, argv, *name); return false;
 	}
@@ -700,7 +701,7 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
 	do{
 		int i=0; container = parent;
 		for( ; container != rootContainer; container = container->parent) i++;
-		if(i>=MAX_LINEAGE) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nInner container is too deep down the lineage.", text); break; }
+		if(i>=MAX_LINEAGE) { setErrorE(stack, L"Error at (%|2s,%s) in %s:\r\nInner container is too deep down the lineage.", text); break; }
 		container=NULL;
 
 		if(!strEnd3(name)){
@@ -731,7 +732,7 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
 		{
 			Container cont; memset(&cont,0,sizeof(cont));
 			cont.parent = parent;
-			container = container_find(stack, &cont, name, 0);
+			container = container_find(NULL, &cont, name, 0);
 			if(container && container->parent != parent) { skip=true; container=NULL; }
 			// TODO: provide comment of when above if() evaluates to true
 		}
@@ -764,7 +765,7 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
 			if(!component_extract (stack, text, inners)) break;
 		}
 
-		if(!found && parent!=rootContainer) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nNon-top-level container must have a name.", text); break; }
+		if(!found && parent!=rootContainer) { setErrorE(stack, L"Error at (%|2s,%s) in %s:\r\nNon-top-level container must have a name.", text); break; }
 		found = !strEnd3(type); // mark that the container type is found
 
 		if(!container)
@@ -791,11 +792,11 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
 
 			Container *cont_type = do_container_find(stack, container, type, skip, 0, 0);
 			assert(cont_type != container);
-			if(!cont_type) // concatenate onto VAL_MESSAGE
+			if(!cont_type) // concatenate onto VALUE_MESSAGE
 			{
 				argv[0] = L"%s\r\nSo cannot access the sibling container.";
 				argv[1] = getMessage(stack); // get error from calling do_container_find()
-				vpcopy(stack, setMessage(vnext(stack), 0, 2, argv));
+				vPrevCopy(stack, setMessage(vnext(stack), 0, 2, argv));
 				break;
 			}
 
@@ -845,15 +846,29 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 	bool firsttime = true;
 	for( ; ; firsttime=false)
 	{
-		if(strEnd3(pathname)) break;
-		name.ptr = pathname.ptr;
-		while(!strEnd3(pathname) && sChar(pathname) != '|') pathname = sNext(pathname);
-		name.end = pathname.ptr;
-		if(!strEnd3(pathname)) pathname = sNext(pathname); // skip the '|'
+		if(strEnd3(pathname)) break; // quit main loop
 
-		     if(strEnd3(name)) { if(firsttime) { current = rootContainer; access = ACCESS_PUBLIC; } continue; }
+		name.ptr = pathname.ptr;
+		while(!strEnd3(pathname) && sChar(pathname) != '|')
+			pathname = sNext(pathname);
+		name.end = pathname.ptr;
+
+		if(!strEnd3(pathname))
+			pathname = sNext(pathname); // skip the '|'
+
+		if(strEnd3(name)) {
+			if(firsttime) {
+				current = rootContainer;
+				access = ACCESS_PUBLIC;
+			}
+			continue;
+		}
 		else if(0==strcmp31(name, "." )) { continue; }
-		else if(0==strcmp31(name, "..")) { if(!(current = current->parent)) current = rootContainer; continue; }
+		else if(0==strcmp31(name, "..")) {
+			if(!(current = current->parent))
+				current = rootContainer;
+			continue;
+		}
 		else if(firsttime) current = current->parent; // default goes to parent
 
 		if(0==strcmp31(name,"main")){
@@ -861,8 +876,9 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 				current=NULL;
 				setError(stack, L"Error: root has no main...!");
 			}
-			break;
+			break; // quit main loop
 		}
+
 		Container *from = current;
 		Container *c=NULL;
 		while(true)
@@ -875,20 +891,22 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 					enum COMP_ACCESS acc = c_access(c);
 					if(!fullAccess && acc < access) // TODO: do_container_find(), upon replace-access-type, should maybe search for the replaced component and use its acces-type instead?
 					{
+						if(!stack) { c=NULL; break; }
 						argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\n"
 								   "Component has %s access inside %s.\r\n"
 								   "Expected at least %s access.";
-						Str2 msg = (Str2)(stack+1000); // +1000 space reserved for result
+						Str2 msg = (Str2)(stack+10000); // +10000 space reserved for result
 						argv[1] = msg; msg = 1+strcpy21(msg, access2str(acc)); // 1+ so to skip '\0'
 						argv[3] = msg; msg = 1+strcpy21(msg, access2str(access));
 						argv[2] = C23(c_name(current));
 						setMessageE(stack, 0, 4, argv, name);
-						c=NULL;
+						c=NULL; // mark error
 					}
 					break;
 				}
 				else assert(true || !(c!=NULL && c->state != NOFOUND));
 			}
+
 			c = current;
 			current = type1only ? c->type1 : c_type(current);
 			if(current==NULL)
@@ -896,20 +914,29 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 				argv[1] = (from==rootContainer) ? L"|" : C23(c_name(from));
 				argv[0] = TWST(Cannot_Find_Component);
 				setMessageE(stack, 0, 2, argv, name);
-				c=NULL;
+				c=NULL; // mark error
 				break;
 			}
-			const Container *p1 = current->parent, *p2 = c->parent;
-			if(p1 == p2) // if have same parent
-			{ if(access <= ACCESS_PRIVATE) access = ACCESS_ENCLOSED; }
-			else if(p1->parent == p2->parent) // if have same grandpa
-			{ if(access <= ACCESS_ENCLOSED) access = ACCESS_PROTECTED; }
+
+			const Container *p1 = current->parent;
+			const Container *p2 = c->parent;
+
+			if(p1 == p2) { // if have same parent
+				if(access <= ACCESS_PRIVATE)
+					access = ACCESS_ENCLOSED;
+			}
+			else if(p1->parent == p2->parent) { // if have same grandpa
+				if(access <= ACCESS_ENCLOSED)
+					access = ACCESS_PROTECTED;
+			}
 			else access = ACCESS_PUBLIC;
 		}
 		current = c;
-		if(c==NULL) break;
-		if(access < ACCESS_PUBLIC) access++;
+		if(c==NULL) break; // quit main loop
+		if(access < ACCESS_PUBLIC)
+			access++; // prepare for next loop
 	}
+	if(current) setBool(stack, true);
 	return current;
 }
 
@@ -994,7 +1021,7 @@ Component* component_parse (value stack, Component *component)
 
 // see expression_to_operation() inside expression.c
 static inline value setOpers (value v, int oper, int size)
-{ *v = (VAL_OPERAT<<28) | (oper<<16) | size; return v+1+size; }
+{ *v = (VALUE_OPERAT<<28) | (oper<<16) | size; return v+1+size; }
 
 value component_evaluate (
 	value stack,
@@ -1002,6 +1029,9 @@ value component_evaluate (
 	Component *component,
 	const_value argument)
 {
+	assert(stack!=NULL);
+	assert(caller!=NULL);
+
 	if(!component){
 		stack = vnext(stack);
 		assert(VERROR(stack));
@@ -1110,7 +1140,7 @@ long replacement (value stack, Container *c, enum REPL_OPERATION opr)
 
 		// Get the string to replace with
 		repl -= repl[1+4+2+2];
-		stack = VstToStr(setRef(stack, repl), PUT_ESCAPE,-1,-1);
+		stack = VstToStr(setRef(stack, repl), TOSTR_ESCAPE);
 		Str3 to = astrcpy32(C37(0), getStr2(vGetPrev(stack)), NULL);
 
 		// Finally perform the replacement
@@ -1134,7 +1164,7 @@ void rfet_init (size_t stack_size)
 {
 	if(stack_size)
 	{
-		if(stack_size < 10000) stack_size = 10000;
+		if(stack_size < 50000) stack_size = 50000;
 
 		void* mem = _realloc (_stackArray, stack_size*sizeof(*_stackArray), "stackArray");
 		if(mem){

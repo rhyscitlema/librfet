@@ -11,7 +11,7 @@
 
 Expression char_type[80];   // char_type means it can be directly followed by any type (ex: +)
 Expression oper_type[10];   // oper_type means loaded as a word_type although is an operator (ex: mod)
-Expression word_type[70];   // word_type means it must be inbetween space_type or char_type (ex: pi)
+Expression word_type[80];   // word_type means it must be inbetween space_type or char_type (ex: pi)
 
 Expression constant_type;       // is a literal constant like 1, 23, 'c', "word"
 Expression compname_type;       // is a string obtained from component_path_name()
@@ -118,74 +118,93 @@ static void operation_load_oper_type()
 }
 
 
+static void load_constant (int i, enum ID_TWSF ID)
+{ operation_add( &word_type[i] , ID , SkipClimbUp | ACONSTANT , NOTLEAVE , HIGHEST ); }
+
+static void load_function (int i, enum ID_TWSF ID)
+{ operation_add( &word_type[i] , ID , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST ); }
+
+
 static void operation_load_word_type()
 {
 	int i=0;
 
-	operation_add( &word_type[i++] , Constant_true      , SkipClimbUp | ACONSTANT , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Constant_false     , SkipClimbUp | ACONSTANT , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Constant_e_2_718_  , SkipClimbUp | ACONSTANT , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Constant_pi_3_141_ , SkipClimbUp | ACONSTANT , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , SQRT_of_Neg_One    , SkipClimbUp | ACONSTANT , NOTLEAVE , HIGHEST );
+	load_constant (i++ , Constant_catch     );
+	load_constant (i++ , Constant_true      );
+	load_constant (i++ , Constant_false     );
+	load_constant (i++ , Constant_e_2_718_  );
+	load_constant (i++ , Constant_pi_3_141_ );
+	load_constant (i++ , SQRT_of_Neg_One    );
 
-	operation_add( &word_type[i++] , Function_factorial , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_fullfloor , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_getprimes , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_srand     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_rand      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_factorial );
+	load_function (i++ , Function_fullfloor );
+	load_function (i++ , Function_getprimes );
+	load_function (i++ , Function_srand     );
+	load_function (i++ , Function_rand      );
 
-	operation_add( &word_type[i++] , Function_gcd       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_ilog      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_isqrt     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_floor     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_ceil      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_gcd       );
+	load_function (i++ , Function_ilog      );
+	load_function (i++ , Function_isqrt     );
+	load_function (i++ , Function_floor     );
+	load_function (i++ , Function_ceil      );
 
-	operation_add( &word_type[i++] , Function_sqrt      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_cbrt      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_exp       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_log       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_sqrt      );
+	load_function (i++ , Function_cbrt      );
+	load_function (i++ , Function_exp       );
+	load_function (i++ , Function_log       );
 
-	operation_add( &word_type[i++] , Function_cos       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_sin       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_tan       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_acos      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_asin      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_atan      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_cos       );
+	load_function (i++ , Function_sin       );
+	load_function (i++ , Function_tan       );
+	load_function (i++ , Function_acos      );
+	load_function (i++ , Function_asin      );
+	load_function (i++ , Function_atan      );
 
-	operation_add( &word_type[i++] , Function_cosh      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_sinh      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_tanh      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_acosh     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_asinh     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_atanh     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_cosh      );
+	load_function (i++ , Function_sinh      );
+	load_function (i++ , Function_tanh      );
+	load_function (i++ , Function_acosh     );
+	load_function (i++ , Function_asinh     );
+	load_function (i++ , Function_atanh     );
 
-	operation_add( &word_type[i++] , Function_cabs      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_carg      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_real      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_imag      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_conj      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_proj      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_cabs      );
+	load_function (i++ , Function_carg      );
+	load_function (i++ , Function_real      );
+	load_function (i++ , Function_imag      );
+	load_function (i++ , Function_conj      );
+	load_function (i++ , Function_proj      );
 
-	operation_add( &word_type[i++] , Function_size      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_span      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_sum       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_max       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_min       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_size      );
+	load_function (i++ , Function_span      );
+	load_function (i++ , Function_sum       );
+	load_function (i++ , Function_max       );
+	load_function (i++ , Function_min       );
 
-	operation_add( &word_type[i++] , Function_vector    , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_range     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_try       , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_vector    );
+	load_function (i++ , Function_range     );
+	load_function (i++ , Function_try       );
 
-	operation_add( &word_type[i++] , Function_tostr     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_tonum     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_toint     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_torat     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_toflt     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_tostr     );
+	load_function (i++ , Function_tonum     );
+	load_function (i++ , Function_toint     );
+	load_function (i++ , Function_torat     );
+	load_function (i++ , Function_toflt     );
 
-	operation_add( &word_type[i++] , Function_eval      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_call      , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_print     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
-	operation_add( &word_type[i++] , Function_strlen    , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+	load_function (i++ , Function_eval      );
+	load_function (i++ , Function_call      );
+	load_function (i++ , Function_print     );
+	load_function (i++ , Function_strlen    );
+
+	load_function (i++ , Function_alert     );
+	load_function (i++ , Function_confirm   );
+	load_function (i++ , Function_prompt    );
+	load_function (i++ , Function_read      );
+	load_function (i++ , Function_write     );
+
+	load_function (i++ , Function_PcnToChr  );
+	load_function (i++ , Function_ChrToPcn  );
+	load_function (i++ , Function_ChrToFcn  );
+	load_function (i++ , Function_SetIsFcn  );
 
 	operation_add( &word_type[i++] ,0,0,0,0);
 }
@@ -202,6 +221,9 @@ void operations_init (value stack)
 }
 
 
+//----------------------------------------------------------------------------------------
+
+
 static value pointer_resolve (value v, const_value n, const_value beg, const_value end)
 {
 	if(end==NULL) end--;
@@ -209,9 +231,9 @@ static value pointer_resolve (value v, const_value n, const_value beg, const_val
 	if(beg<=n && n<=end)
 	{
 		uint32_t a = *n;
-		if((a>>28)==VAL_VECTOR)
+		if(VTYPE(a)==VALUE_VECTOR)
 		{
-			a = VEC_LEN(a);
+			a = VECTOR_LEN(a);
 			value w = v;
 			v += 2; // reserve space for vector header
 			n += 2; // skip vector header
@@ -224,7 +246,7 @@ static value pointer_resolve (value v, const_value n, const_value beg, const_val
 			setVector(w, a, v-w-2);
 			v = setOffset(v, v-w);
 		}
-		else v = vcopy(v, n);
+		else v = vCopy(v, n);
 	}
 	return v;
 }
@@ -235,10 +257,10 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 	value y = vPrev(v);
 	const_value n = vGet(y);
 	uint32_t a = *n;
-	if((a>>28)==VAL_MESSAGE) return v;
+	if(VTYPE(a)==VALUE_MESSAGE) return v;
 
-	if((a>>28)==VAL_VECTOR){
-		a = VEC_LEN(a);
+	if(VTYPE(a)==VALUE_VECTOR){
+		a = VECTOR_LEN(a);
 		n += 2; // skip vector header
 	} else a=1;
 
@@ -261,7 +283,7 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 		if(!container){
 			assert(fullAccess == false);
 			assert(VERROR(vnext(v)));
-			return vcopy(y, v);
+			return vCopy(y, v);
 		}
 	}
 	n = vNext(n); // skip function name
@@ -285,9 +307,9 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 	{
 		t = vGet(n);
 		a = *t;
-		if((a>>28)==VAL_VECTOR && (mask & (1L<<i)))
+		if(VTYPE(a)==VALUE_VECTOR && (mask & (1L<<i)))
 		{
-			a = VEC_LEN(a);
+			a = VECTOR_LEN(a);
 			if(a){
 				len[i] = a-1;
 				m[i] = t+2;
@@ -314,8 +336,8 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 		else if(count==0) setVector(arg,0,0);
 
 		component_evaluate(v, container, container, arg);
-		if(*v>>28) v = vNEXT(v);
-		else return vcopy(y, v);
+		if(VTYPE(*v)) v = vNEXT(v);
+		else return vCopy(y, v);
 
 		w = NULL;
 		for(i=0; i<count; i++)
@@ -332,7 +354,7 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 		e -= 2; // reserve space for vector header
 		setVector(e, a, v-e-2); // set vector header
 	}
-	return vpcopy(y, pointer_resolve(v,e,y,NULL));
+	return vPrevCopy(y, pointer_resolve(v,e,y,NULL));
 }
 
 
@@ -340,21 +362,21 @@ static value doEval (value v) // TODO: avoid nested eval(eval())
 {
 	value y = vPrev(v);
 	const_value n = vGet(y);
-	if((*n>>28)==VAL_MESSAGE) return v;
+	if(VTYPE(*n)==VALUE_MESSAGE) return v;
 
 	const_value argument = NULL;
 	uint32_t c = *n;
-	if((c>>28)==VAL_VECTOR)
+	if(VTYPE(c)==VALUE_VECTOR)
 	{
 		n += 2; // skip vector header
-		c = VEC_LEN(c); // get vector length
+		c = VECTOR_LEN(c); // get vector length
 		if(c==2) argument = vNext(n);
 		else if(c!=1) n=NULL; // mark error
 	}
 	if(!n || !isStr2(n)) // if error
 		v = setError(y, L"Valid usage is eval(\"rfet\") or\r\neval(\"\\\\(parameter)= rfet\", argument).");
 	else
-		v = vpcopy(y, rfet_parse_and_evaluate(v, getStr2(n), L"eval()", argument));
+		v = vPrevCopy(y, rfet_parse_and_evaluate(v, getStr2(n), L"eval()", argument));
 	return v;
 }
 
@@ -367,12 +389,12 @@ static value valueSt_compare (value v, const_value obtained, const_value expecte
 	uint32_t a = *obtained;
 	uint32_t b = *expected;
 
-	if((b>>28)==VAL_VECTOR)         // if a vector is expected
+	if(VTYPE(b)==VALUE_VECTOR)  // if a vector is expected
 	{
-		if((a>>28)==VAL_VECTOR)     // if a vector is obtained
+		if(VTYPE(a)==VALUE_VECTOR)  // if a vector is obtained
 		{
-			a = VEC_LEN(a);         // get vector length
-			b = VEC_LEN(b);
+			a = VECTOR_LEN(a);
+			b = VECTOR_LEN(b);
 			if(a != b) return NULL; // error, must have same length
 
 			obtained += 2; // skip vector header
@@ -388,8 +410,9 @@ static value valueSt_compare (value v, const_value obtained, const_value expecte
 		}
 		else return NULL;
 	}
-	else if((a>>28)==VAL_VECTOR
-	     && (!p || !VEC_LEN(a))) return NULL;
+	else if(VTYPE(a)==VALUE_VECTOR
+	     && (!p || !VECTOR_LEN(a)))
+		return NULL;
 
 	if(p > (value)1) {
 		p -= 2;
@@ -399,12 +422,23 @@ static value valueSt_compare (value v, const_value obtained, const_value expecte
 }
 
 
+static value setcatch (value out, const wchar* message)
+{
+	value v = setStr22(out, message);
+	uint32_t a = out[-1];
+	if(VTYPE(a)==VALUE_OFFSET)
+		a &= 0x0FFFFFFF;
+	else a = 0;
+	return setOffset(v, v-out+1+a);
+}
+
+
 static value compare_failed (value v, const_value obtained, const_value expected, int ID)
 {
 	const_Str2 argv[3];
 	value w;
-	v = VstToStr(setRef(v, obtained), PUT_CATEGORY|0, -1, -1);
-	w = VstToStr(setRef(v, expected), PUT_CATEGORY|0, -1, -1);
+	v = VstToStr(setRef(v, obtained), TOSTR_CATEGORY);
+	w = VstToStr(setRef(v, expected), TOSTR_CATEGORY);
 	argv[0] = TWST(ID);
 	argv[1] = getStr2(vGetPrev(v));
 	argv[2] = getStr2(vGetPrev(w));
@@ -412,31 +446,33 @@ static value compare_failed (value v, const_value obtained, const_value expected
 }
 
 #define OPEV(v) ((OperEval*)v)
-#define GetC(v) (*(Component**)(size_t)(v))
+#define GET_COMP(v) (*(Component**)(size_t)(v))
+#define GET_OPER_ID(a) (((a)>>16) & 0x0FFF) // get the 12-bits [23:16]
+#define GET_OPER_SIZE(a) (1+((a) & 0xFFFF)) // get 1 + 16-bits [15:0]
 
 
 value operations_evaluate (value stack, const_value oper)
 {
 	assert(oper && stack);
-	if(!stack || !oper || !(*oper>>28))
-		return vcopy(stack, oper); // TODO: review this line in operations_evaluate()
+	if(!stack || !oper || !VTYPE(*oper))
+		return vCopy(stack, oper); // TODO: review this line in operations_evaluate()
 
 	Component *comp=NULL;
 	const_Str3 name={0};
 	const_Str2 argv[2];
 
-	if((*oper>>28)==VAL_VECTOR) oper+=2;
-	assert((*oper>>28)==VAL_OPERAT);
+	if(VTYPE(*oper)==VALUE_VECTOR) oper+=2;
+	assert(VTYPE(*oper)==VALUE_OPERAT);
 	value P = stack;
 	value try = P;
 	value v = P + OperEvalSize; // see expression.h
 	v += OPEV(P)->start;
-	OPEV(P)->start = 0;
+	OPEV(P)->start = 0; // this is now used for counting recursions
 
 	while(true) // main loop
 	{
 		uint32_t a = *oper;
-		enum ID_TWSF ID = (a>>16)&0x0FFF;
+		enum ID_TWSF ID = GET_OPER_ID(a);
 		if(ID==0) // if end of evaluation then do a return-call
 		{
 			bool error = VERROR(v);
@@ -444,7 +480,7 @@ value operations_evaluate (value stack, const_value oper)
 			&& !error)
 			{
 				// get the component that contains this expression
-				comp = GetC(oper+1); assert(comp!=NULL);
+				comp = GET_COMP(oper+1); assert(comp!=NULL);
 
 				// get to result of evaluation
 				const_value r = vGetPrev(v);
@@ -498,16 +534,16 @@ value operations_evaluate (value stack, const_value oper)
 					argv[1] = getMessage(vGetPrev(v));
 					v = setMessageE(v, 0, 2, argv, name);
 				}
-				if(p) v = vpcopy(p, v);
+				if(p) v = vPrevCopy(p, v);
 				break; // quit main loop
 			}
 			if(error) goto on_error;
-			if(p) v = vpcopy(p, v);
+			if(p) v = vPrevCopy(p, v);
 			continue;
 		}
 		name = *(const_Str3*)(oper+1); // record where the expression's name
 
-		if(ID==OperJustJump) { oper += 1+(a & 0xFFFF); continue; }
+		if(ID==OperJustJump) { oper += GET_OPER_SIZE(a); continue; }
 
 		if(ID==SET_DOT_CALL     // if a container.variable call
 		|| ID==SET_DOT_FUNC)    // if a container.function call
@@ -535,7 +571,7 @@ value operations_evaluate (value stack, const_value oper)
 				pathname.end = Name.end;
 
 				// get the component that contains this expression
-				comp = GetC(oper+1+4); assert(comp!=NULL);
+				comp = GET_COMP(oper+1+4); assert(comp!=NULL);
 
 				// get the containing container of that component
 				Container* current = c_container(comp);
@@ -559,7 +595,7 @@ value operations_evaluate (value stack, const_value oper)
 				if(!comp) // if error
 				{
 					assert(v == vPrev(vnext(v)));
-					v = vnext(v); // go to after VAL_MESSAGE
+					v = vnext(v); // go to after VALUE_MESSAGE
 					goto on_error;
 				}
 				int p = *c_para(comp); // get 1 + number of parameters
@@ -583,7 +619,9 @@ value operations_evaluate (value stack, const_value oper)
 		{
 			if(ID==SET_VAR_FUNC)
 			{
-				comp = GetC(oper+1+4); assert(comp!=NULL);
+				// get the component that contains this expression
+				comp = GET_COMP(oper+1+4); assert(comp!=NULL);
+
 				if(comp->replace         // if is a 'replaced' component
 				|| comp->state!=ISPARSE) // if before component_finalise()
 				{
@@ -596,8 +634,8 @@ value operations_evaluate (value stack, const_value oper)
 				if(comp->instance == evaluation_instance(0)
 				&& comp->caller == OPEV(P)->caller)
 				{
-					v = vcopy(v, comp->constant); // then just copy it
-					oper += 1+(a & 0xFFFF);
+					v = vCopy(v, comp->constant); // then just copy it
+					oper += GET_OPER_SIZE(a);
 					continue;
 				}
 			}
@@ -606,7 +644,7 @@ value operations_evaluate (value stack, const_value oper)
 			if(++recurs == 10000) // if too many recursive calls
 			{
 				setErrorE(v, L"Warning on '%s' at (%s,%s) in %s:\r\nFound too many recursive calls. Continue?", name);
-				if(!wait_for_confirmation(L"Warning", getMessage(v)))
+				if(!user_confirm(L"Warning", getMessage(v)))
 				{
 					v = setError(v, L"Found too many recursive calls.");
 					goto on_error;
@@ -635,22 +673,28 @@ value operations_evaluate (value stack, const_value oper)
 			{
 				// push values to be recovered on return
 				// see struct OperEval in expression.h
-				p[0] = C | (P[0] & 0xFF00) | ((uint32_t)recurs<<16);
-				OPEV(p)->result = p-v;
-				OPEV(p)->stack = p-P;
-				OPEV(p)->p_try = p-try;
-				oper += 1+(a & 0xFFFF);     // tell return-from-call to
-				OPEV(p)->opers = oper;      // point to the next operation
+				{
+					p[0] = C | (P[0] & 0xFF00) | ((uint32_t)recurs<<16);
+					//OPEV(p)->paras = C;
+					//OPEV(p)->input = OPEV(P)->input;
+					//OPEV(p)->start = recurs;
 
-				if(ID==SET_DOT_CALL)                                    // if a container.component call
-				     ((OperEval*)p)->caller = c_container(comp);        // then get new caller container
-				else ((OperEval*)p)->caller = ((OperEval*)P)->caller;   // else copy old caller
+					OPEV(p)->result = p-v;
+					OPEV(p)->stack = p-P;
+					OPEV(p)->p_try = p-try;
+
+					oper += GET_OPER_SIZE(a);   // tell return-from-call to
+					OPEV(p)->opers = oper;      // point to the next operation
+				}
+				if(ID==SET_DOT_CALL)                      // if a container.component call
+				     OPEV(p)->caller = c_container(comp); // then get new caller container
+				else OPEV(p)->caller = OPEV(P)->caller;   // else copy old caller
 
 				// finally do the component call
 				assert(c_oper(comp)!=NULL);
 				oper = c_oper(comp);
-				if((*oper>>28)==VAL_VECTOR) oper+=2;
-				assert((*oper>>28)==VAL_OPERAT);
+				if(VTYPE(*oper)==VALUE_VECTOR) oper+=2;
+				assert(VTYPE(*oper)==VALUE_OPERAT);
 				P = p;
 				try = P;
 				v = P + OperEvalSize; // see expression.h
@@ -659,9 +703,10 @@ value operations_evaluate (value stack, const_value oper)
 		}
 		else if(ID==SET_PARAMTER)
 		{
-			assert((a & 0xFFFF) < OPEV(P)->paras);
-			a = ((a & 0xFFFF)+1)*2;
-			v = vcopy(v, *(const_value*)(P-a));
+			a &= 0xFFFF; // get parameter position
+			assert(a < OPEV(P)->paras);
+			a = (a+1)*2; // get pointer offset
+			v = vCopy(v, *(const_value*)(P-a));
 			oper += 1;
 			continue;
 		}
@@ -671,26 +716,31 @@ value operations_evaluate (value stack, const_value oper)
 			const_value n = vGet(v);
 			if(!isBool(n)) // if result is not boolean
 			{
-				assert((*n>>28)==VAL_VECTOR);
+				assert(VTYPE(*n)==VALUE_VECTOR);
 				argv[0] = TWST(Condition_IsNot_Single);
 				v = setMessage(v, 0, 1, argv);
 			}
 			else if(*n & 1) // if condition was false: _not(false) == true
 			     { oper += *(oper+1+4); continue; }
-			else { oper += 1+(a & 0xFFFF); continue; }
+			else { oper += GET_OPER_SIZE(a); continue; }
 		}
 		else if(ID==Function_try)
 		{
-			if(try==P) { try=v; oper += 1+(a & 0xFFFF); }
+			oper += GET_OPER_SIZE(a);
+
+			if(try==P) {
+				try = v;
+				v = setcatch(v, NULL);
+			}
 			else
 			{
 				argv[0] = L"A try() inside another is not allowed.";
 				v = setMessage(v, 0, 1, argv);
 				while(true) // jump to the end of opers
 				{
-					oper += 1+(a & 0xFFFF);
 					a = *oper;
-					if(((a>>16)&0x0FFF)==0) break;
+					if(GET_OPER_ID(a)==0) break;
+					oper += GET_OPER_SIZE(a);
 				}
 			}
 			continue;
@@ -700,9 +750,16 @@ value operations_evaluate (value stack, const_value oper)
 			while(true) // jump to the corresponding catch
 			{
 				a = *oper;
-				oper += 1+(a & 0xFFFF);
-				if(((a>>16)&0x0FFF)==Function_try_catch) { try=P; break; }
+				oper += GET_OPER_SIZE(a);
+				if(GET_OPER_ID(a)==Function_try_catch) { try=P; break; }
 			}
+			continue;
+		}
+		else if(ID==Constant_catch)
+		{
+			if(try==P) v = setStr22(v, NULL);
+			else v = vCopy(v, try);
+			oper += GET_OPER_SIZE(a);
 			continue;
 		}
 		else if(ID==Replacement) // Also see expression_to_operation() in expression.c
@@ -714,8 +771,8 @@ value operations_evaluate (value stack, const_value oper)
 			{
 				v = vPrev(v);
 				const_value n = vGet(v);
-				*(w-1) = (VAL_OPERAT<<28) | (OperJustJump<<16) | (uint16_t)size;
-				memcpy(w, n, vSize(n)*sizeof(*n)); // TODO: check size limit, also use vcopy instead
+				*(w-1) = (VALUE_OPERAT<<28) | (OperJustJump<<16) | (uint16_t)size;
+				memcpy(w, n, vSize(n)*sizeof(*n)); // TODO: check size limit, also use vCopy instead
 			}
 			long* t = (long*)(size_t)(oper+1+4+2);
 			size = evaluation_instance(0);
@@ -723,15 +780,17 @@ value operations_evaluate (value stack, const_value oper)
 			{
 				*t = size;
 
-				comp = GetC(oper+1+4);
+				// get the component that contains this expression
+				comp = GET_COMP(oper+1+4); assert(comp!=NULL);
+
 				if(c_container(comp) == OPEV(P)->caller) // check if on caller container
 				{
 					// go execute the Right Hand Size of ':='
-					oper += 1+(a & 0xFFFF);
+					oper += GET_OPER_SIZE(a);
 					continue;
 				}
 			}
-			v = vcopy(v, w); // copy LHS constant of ':='
+			v = vCopy(v, w); // copy LHS constant of ':='
 			oper += oper[1+4+2+2+1]; // skip RHS code of ':='
 			continue;
 		}
@@ -747,7 +806,7 @@ value operations_evaluate (value stack, const_value oper)
 				memcpy(w, u, (v-u-1)*sizeof(*u)); // copy new LHS constant TODO: check for overflow
 				replacement_record(repl);
 			}
-			oper += 1+(a & 0xFFFF);
+			oper += GET_OPER_SIZE(a);
 			continue;
 		}
 		else if(ID==Function_print)
@@ -756,19 +815,19 @@ value operations_evaluate (value stack, const_value oper)
 			p  = ( ~ OPEV(p)->result ) ?
 			     (p - OPEV(p)->result) : NULL; // get final location of result
 
-			v = VstToStr(v, PUT_NEWLINE|0, -1, -1);
+			v = VstToStr(v, TOSTR_NEWLINE);
 			argv[0] = L"[On \"%s\" at (%s,%s) in %s]\r\n%s";
 			argv[1] = getStr2(vGetPrev(v));
-			v = vpcopy(p, setMessageE(v, 0, 2, argv, name));
+			v = vPrevCopy(p, setMessageE(v, 0, 2, argv, name));
 			break; // quit main loop
 		}
 		else{
-			switch(ID)
+			switch(ID) // TODO: maybe fetch from an array of "value (*)(value v)" functions
 			{
 			case Function_try_catch: try=P; break;
-			case SET_CONSTANT: v = vcopy(v, oper+1); break;
-			case SET_REPL_LHS: v = vcopy(v, oper - oper[1]); break;
-			case SET_OUTSIDER: v = set_outsider(v, oper[1+4]); break;
+			case SET_CONSTANT   : v = vCopy(v, oper+1); break;
+			case SET_REPL_LHS   : v = vCopy(v, oper - oper[1]); break;
+			case SET_OUTSIDER   : v = set_outsider(v, oper[1+4]); break;
 
 			case Logical_OR     : v = logical_or(v); break;
 			case Logical_AND    : v = logical_and(v); break;
@@ -871,26 +930,44 @@ value operations_evaluate (value stack, const_value oper)
 			case Function_torat : v = toRat(v); break;
 			case Function_toflt : v = toFlt(v); break;
 
-			case Function_eval  : v = doEval(v); break;
-			case Function_call  : v = doCall(v); break;
-			case Function_strlen: v = vStrLen(v); break;
+			case Function_eval   : v = doEval (v); break;
+			case Function_call   : v = doCall (v); break;
+			case Function_strlen : v = vStrLen(v); break;
+
+			case Function_alert  : v = oper_alert  (v); break;
+			case Function_confirm: v = oper_confirm(v); break;
+			case Function_prompt : v = oper_prompt (v); break;
+			case Function_read   : v = oper_read   (v); break;
+			case Function_write  : v = oper_write  (v); break;
+
+			case Function_PcnToChr: v = PcnToChr(v); break;
+			case Function_ChrToPcn: v = ChrToPcn(v); break;
+			case Function_ChrToFcn: v = ChrToFcn(v); break;
+			case Function_SetIsFcn: v = SetIsFcn(v); break;
 
 			default: assert(false); break;
 			}
-			oper += 1+(a & 0xFFFF);
+			oper += GET_OPER_SIZE(a);
 		}
 		if(VERROR(v))
 		{
 			on_error: ;
-			bool f=1;
+			bool skip = false;
 			while(true)
 			{
 				a = *oper;
-				ID = ((a>>16)&0x0FFF);
+				ID = GET_OPER_ID(a);
 				if(ID==0) break;
-				oper += 1+(a & 0xFFFF);
-				if(ID==Function_try_that  && f) { v=try; break; }
-				if(ID==Function_try_catch && f) f=0;
+
+				oper += GET_OPER_SIZE(a);
+				if(skip) continue;
+
+				if(ID==Function_try_catch) skip = true;
+				if(ID==Function_try_that )
+				{
+					v = setcatch(try, getMessage(vGetPrev(v)));
+					break;
+				}
 			}
 		}
 	}

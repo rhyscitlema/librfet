@@ -39,7 +39,7 @@ bool rfet_remove (value stack, RFET rfet);
 	Typical usage is:
 
 	stack = rfet_parse_and_evaluate (stack, rfet_string, NULL, NULL);
-	stack = VstToStr(stack, PUT_NEWLINE|0, -1, -1); // see _math.h
+	stack = VstToStr(stack, TOSTR_NEWLINE); // see _math.h
 	puts2(getStr2(vGetPrev(stack))); // print output string to stdout
 */
 value rfet_parse_and_evaluate (

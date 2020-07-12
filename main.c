@@ -11,7 +11,7 @@
 
 #ifndef SKIP_MAIN
 
-void wait_for_user_first (const wchar* title, const wchar* message)
+void user_alert (const wchar* title, const wchar* message)
 {
 	#ifdef LOCAL_USER
 	printf("\r\n>>> "); puts2(title); puts2(message);
@@ -19,16 +19,37 @@ void wait_for_user_first (const wchar* title, const wchar* message)
 	#endif
 }
 
-bool wait_for_confirmation (const wchar* title, const wchar* message)
+bool user_confirm (const wchar* title, const wchar* message)
 {
 	#ifdef LOCAL_USER
 	char buffer[10];
 	printf("\r\n>>> "); puts2(title); puts2(message);
-	printf("Enter 1 for OK or else for Cancel : ");
-	if(!fgets(buffer, sizeof(buffer), stdin)) return false;
-	return (buffer[0]=='1' && (buffer[1]=='\n' || buffer[1]==0));
+	printf("Enter ok / <anything> : ");
+	if(!fgets(buffer, sizeof(buffer), stdin))
+		return false;
+	else return 0==strcmp(buffer, "ok\n");
 	#else
 	return false;
+	#endif
+}
+
+const wchar* user_prompt (const wchar* title, const wchar* message, const wchar* entry)
+{
+	#ifdef LOCAL_USER
+	char buffer[100000];
+	printf("\r\n>>> "); puts2(title); puts2(message);
+	printf("\r\nEntry: "); puts2(entry);
+	printf("Reply: ");
+
+	if(!fgets(buffer, sizeof(buffer), stdin))
+		strcpy12(buffer, entry);
+	else{
+		size_t len = strlen(buffer);
+		buffer[len-1] = '\0'; // skip the '\n' at the end
+	}
+	return CST21(buffer);
+	#else
+	return NULL;
 	#endif
 }
 
@@ -92,14 +113,15 @@ static void tools_get_prev (int show)
 {
 	void* node = list_head_pop(container_list());
 	list_tail_push(container_list(), node);
-	tools_select(*(Container**)list_head(container_list()), show);
+	node = list_head(container_list());
+	if(node) tools_select(*(Container**)node, show);
 }
 
 static void tools_get_next (int show)
 {
 	void* node = list_tail_pop(container_list());
 	list_head_push(container_list(), node);
-	tools_select(*(Container**)node, show);
+	if(node) tools_select(*(Container**)node, show);
 }
 
 
@@ -201,7 +223,7 @@ int execute (int argc, char** argv, int verbose)
 
 			if(VERROR(stack)) trfet=NULL;
 			else{
-				stack = VstToStr(stack, PUT_NEWLINE|0, -1, -1); // see _math.h
+				stack = VstToStr(stack, TOSTR_NEWLINE); // see _math.h
 
 				if(rfet_commit_replacement(stack, trfet) && verbose>=1)
 				{

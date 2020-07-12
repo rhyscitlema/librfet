@@ -98,9 +98,9 @@ static bool get_parameter_position (int *position, const_value v, const_Str3 par
 	int p=0;
 	while(v<end)
 	{
-		int a = *v >> 28;
-		assert(a==VAL_VECTOR || isStr2(v));
-		if(a==VAL_VECTOR) v+=2; // skip vector header
+		int a = VTYPE(*v);
+		assert(a==VALUE_VECTOR || isStr2(v));
+		if(a==VALUE_VECTOR) v+=2; // skip vector header
 		else if(0==strcmp32(param, getStr2(v))) { *position = p; break; }
 		else { v = vNext(v); p++; }
 	}
@@ -124,21 +124,23 @@ const Expression* get_next_item (
 	Expression *nextItem=NULL;
 	const Expression *tempItem;
 	const_Str2 argv[2];
+
 	assert(stack && strExpr && str);
 	if(!(stack && strExpr && str)) return NULL;
 
 	// Task 1: prepare to start looking for the next item
-	if(currentItem==NULL) currentItem_type=0;
+	if(currentItem==NULL) currentItem_type = 0;
 	else currentItem_type = currentItem->type;
 	nextItem = NULL;
+	(*strExpr) = skipComment3(*strExpr);
 
 	// Task 2: skip the spaces
 	while(true)
 	{
 		if(strEnd3(*strExpr)) // if end of expression
-		{ *str=C37(NULL); return NULL; }
+		{ *str = C37(NULL); return NULL; }
 		c = sChar(*strExpr);
-		if(!isSpace(c) && c!='#') break;
+		if(!isSpace(c)) break;
 		(*strExpr) = strNext3(*strExpr);
 	}
 	*str = *strExpr;
@@ -190,7 +192,7 @@ const Expression* get_next_item (
 			&& (currentItem_type & ALEAVE))
 			{
 				if(id==OpenedBracket3)
-				     return get_the_item(Oper_indexing);
+					return get_the_item(Oper_indexing);
 				else return precede_with_times(strExpr,str);    // else do a multiplication if something like a(1) => a*(1)
 			}
 
@@ -220,7 +222,7 @@ const Expression* get_next_item (
 		extract_string(strExpr, str);   // get comp_name
 		if(strEnd3(*str))
 		{
-			argv[0] = L"Error at (%2,%3) in %4:\r\nExpected a name directly after '.'.";
+			argv[0] = L"Error at (%|2s,%s) in %s:\r\nExpected a name directly after '.'.";
 			setMessageE(stack, 0, 1, argv, lstr);
 			return NULL;
 		}
@@ -229,9 +231,11 @@ const Expression* get_next_item (
 		// check if there is a '(' after component_name
 		for(lstr = *strExpr; !strEnd3(lstr); lstr = strNext3(lstr))
 			if(!isSpace(sChar(lstr))) break;
+
 		if(!strEnd3(lstr) && sChar(lstr) == '(')
 		     dot_call_type.type = AFUNCTION;
 		else dot_call_type.type = AVARIABLE;
+
 		return &dot_call_type;
 	}
 
@@ -244,23 +248,33 @@ const Expression* get_next_item (
 		while(true)
 		{
 			(*strExpr) = sNext(*strExpr);
-			if(strEnd3(*strExpr))
-			{
-				// end reached without finding a closing " or '
-				argv[1] = (chr=='"' ? L"\"" : L"'");
-				argv[0] = L"Error at (%2,%3) in %4:\r\nExpected a closing '%s'.";
-				setMessageE(stack, 0, 2, argv, *str);
-				return NULL;
-			}
+			if(strEnd3(*strExpr)) break;
+
 			c = sChar(*strExpr);
-			if(!escape) {
-				if(c==chr) break;
-				if(c=='\\') escape = true;
-			} else escape = false;
+			if(c=='#' && sChar(sNext(*strExpr))=='{')
+			{
+				*strExpr = skipComment3(*strExpr);
+				if(strEnd3(*strExpr)) break;
+				else escape = false;
+			}
+			else if(escape) escape = false;
+			else if(c=='\\') escape = true;
+			else if(c==chr) break;
 		}
-		(*strExpr) = sNext(*strExpr); // skip the ' or " found
-		str->end = strExpr->ptr;
-		return &constant_type;
+		if(strEnd3(*strExpr))
+		{
+			// end reached without finding a closing " or '
+			argv[1] = (chr=='"' ? L"\"" : L"'");
+			argv[0] = L"Error at (%|2s,%s) in %s:\r\nExpected a closing '%s'.";
+			setMessageE(stack, 0, 2, argv, *str);
+			return NULL;
+		}
+		else
+		{
+			(*strExpr) = sNext(*strExpr); // skip the ' or " found
+			str->end = strExpr->ptr;
+			return &constant_type;
+		}
 	}
 
 
@@ -270,7 +284,7 @@ const Expression* get_next_item (
 
 	if(size > MAX_NAME_LEN)
 	{
-		argv[0] = L"Error at (%2,%3) in %4:\r\nWord of length %5 is too long.";
+		argv[0] = L"Error at (%|2s,%s) in %s:\r\nWord of length %s is too long.";
 		argv[1] = TIS2(0,size);
 		setMessageE(stack, 0, 2, argv, *str);
 		return NULL;
@@ -362,8 +376,8 @@ const Expression* get_next_item (
 		if(0==strcmp32(*str, TWSF(word_type[j].ID)))
 			return &word_type[j];
 
-	// Task 16: check if "this"
-	if(0==strcmp32(*str, TWSF(Constant_this)))
+	// Task 16: check if the PATH constant
+	if(0==strcmp32(*str, TWSF(Constant_PATH)))
 	{
 		compname_type.call_comp = c_container(component);
 		return &compname_type;
@@ -409,9 +423,9 @@ static Expression *insertNew (Expression *current, const Expression *newItem)
 		current->parent->lastChild = current->headChild;
 
 		node = current->parent;
-		current->headChild = NULL;          // this line is to make sure that
+		current->headChild = NULL;     // this line is to make sure that
 		current->prevSibling = NULL;
-		expression_remove(current);        // only this 'current' node is removed
+		expression_remove(current);    // only this 'current' node is removed
 
 		/* step 6: Set the 'current node' to be the parent node */
 		current = node;
@@ -485,8 +499,8 @@ value parseExpression (value stack, const_Str3 strExpr, Component *component)
 		if(nextItem==NULL)
 		{
 			if(strEnd3(str) && strEnd3(strExpr)) break; // if end of expression
-			stack = vnext(stack);   // go to after VAL_MESSAGE to prepare for return
-			break;                  // on an error occured while getting next item
+			stack = vnext(stack);   // Go to after VALUE_MESSAGE to prepare for return
+			break;                  // ..on an error occured while getting next item.
 		}
 		assert(nextItem->ID != EndOfStatement);
 
@@ -588,8 +602,9 @@ static void expression_tree_print (const Expression *expression, int spaces)
 	const Expression *expr = expression->headChild;
 	expression_tree_print(expr, spaces+10);
 
-	int i; for(i=0; i < spaces; i++) putc2(' ');
+	int i; for(i=0; i<spaces; i++) putc2(' ');
 
+	printf("ID=%d ", expression->ID);
 	if(strEnd3(expression->name))
 		printf("?:?");
 	else
@@ -620,7 +635,7 @@ static value set_error (value v, const_Str3 name)
 static inline value setOpers (value v, int oper, int size)
 {
 	assert(!(oper & ~0x0FFF) && !(size & ~0xFFFF));
-	*v = (VAL_OPERAT<<28) | (oper<<16) | size;
+	*v = (VALUE_OPERAT<<28) | (oper<<16) | size;
 	return v+1+size;
 }
 
@@ -639,10 +654,11 @@ static value expression_to_operation (const Expression *expression, value stack)
 
 	bool root = !expression->parent || !expression->parent->parent;
 	if(root) {
-		expression_tree_print(NULL/*expression*/, 0);
+		expression_tree_print (0?expression:NULL, 0);
 		v += 2; // reserve space for vector header
 	}
-	if(ID==SET_PARAMTER && expression->component==NULL) ID = SET_CONSTANT;
+	if(ID==SET_PARAMTER && expression->component==NULL)
+		ID = SET_CONSTANT;
 	switch(ID)
 	{
 	case SET_CONSTANT:
@@ -739,7 +755,7 @@ static value expression_to_operation (const Expression *expression, value stack)
 		v = setOpers(v, ID, 1);
 		break;
 
-	case SET_DOT_CALL: // first know what this operator does
+	case SET_DOT_CALL: // Note: first know what this operator does
 		EXPR_TO_OPER(expression->lastChild)
 		w = (expression->headChild != expression->lastChild)?v:0;
 		if(w){ EXPR_TO_OPER(expression->headChild) }
@@ -749,6 +765,7 @@ static value expression_to_operation (const Expression *expression, value stack)
 		v = setOpers(v, ID, 4+2);
 		break;
 
+	case Constant_catch:
 	case Constant_true:
 	case Constant_false:
 	case Constant_e_2_718_:
@@ -776,7 +793,7 @@ static value expression_to_operation (const Expression *expression, value stack)
 
 	if(!root) *v = ok; // if not at root node
 	else if(!ok) // on error, copy error message
-		v = vpcopy(stack, v);
+		v = vPrevCopy(stack, v);
 	else{
 		w = v+1;
 		Component* c = expression->component;
