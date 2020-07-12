@@ -2,37 +2,20 @@
 #define _STRUCTURES_H
 /*
     structures.h
-
-    Component > Container | Function > Expression > value
 */
 
 #include <_math.h>
 #include <_string.h>
 #include <_malloc.h>
 #include <_texts.h>
-#include <assert.h>
 #include <list.h>
 #include <avl.h>
 
-void rfet_init (int stack_size);
-void rfet_clean ();
+size_t stackSize();
+value stackArray();
 
-int stackSize();
-value* mainStack();
-
-
-typedef struct _GeneralArg
-{   struct _Component* caller;
-    wchar* message;
-    const value* argument;
-} GeneralArg;
-
-typedef struct _ExprCallArg
-{   GeneralArg* garg;
-    struct _Expression* expression;
-    value* stack;
-} ExprCallArg;
-
+void rfet_init (size_t stack_size);
+#define rfet_clean() rfet_init(0)
 
 
 typedef struct _Expression
@@ -45,7 +28,7 @@ typedef struct _Expression
     struct _Expression *prevSibling;
 
     // name of expression (name of operator or component or string)
-    lchar* name;
+    const_Str3 name;
 
     // used to store the ID of an operation.
     enum ID_TWSF ID;
@@ -59,46 +42,44 @@ typedef struct _Expression
     // precedence level, used when adding a new expression
     int precedence;
 
-    bool (*evaluate) (ExprCallArg eca);
-
     // the component that owns this expression
     struct _Component *component;
+
+    //union{
 
     // used for when expression is a call to a component
     struct _Component *call_comp;
 
-    // used to store the position of a parameter.
-    // used as outsider ID for when expression is an outsider.
-    int param[20];
+    // used by expression_to_operation() for replacement
+    const_value ptr_to_lhs;
 
-    // used for when expression evaluates to a constant
-    value constant;
+    int param; // used to store the position of a parameter
 
-    // used to store first-time evaluation information
-    int info;
+    int outsider; // ID of outsider component call
+
+    //};
 
     // = 0 => outsider dependent (default)
     // = 2 => parameter dependent (inside a function)
-    // = 1 => independent
-    char independent;
+    // = 1 => independent, so can be made constant
+    int info;
 
     // used by expression_destroy()
     bool deleted;
 } Expression;
 
-#define expression_evaluate(eca) (eca.expression!=NULL ? eca.expression->evaluate(eca) : false)
 
-
-
-enum STATE {
+enum COMP_STATE {
     ISPARSE, // I have been parsed
     DOPARSE, // I have changed, parse me
-    NOPARSE, // I have not changed, do not parse me
-    DELETED, // I have not been found in my container
-    CREATED  // I have just been created
+    NOPARSE, // I have not changed, leave me alone
+    ISFOUND, // I have been found in my container
+    DOFOUND, // I have been found but was DOPARSE
+    NOFOUND, // I have been placed on death sentence
+    CREATED  // I have been created to serve YKW...
 };
 
-enum ACCESS {
+enum COMP_ACCESS {
     ACCESS_PRIVATE,     // in same container
     ACCESS_ENCLOSED,    // have same parents
     ACCESS_PROTECTED,   // have same grandpa
@@ -106,7 +87,7 @@ enum ACCESS {
     ACCESS_REPLACE
 };
 
-static inline const char* access2str (enum ACCESS access)
+static inline /*const*/ char* access2str (enum COMP_ACCESS access)
 {
     switch(access) {
         case ACCESS_PRIVATE:   return "Private";
@@ -114,96 +95,97 @@ static inline const char* access2str (enum ACCESS access)
         case ACCESS_PROTECTED: return "Protected";
         case ACCESS_PUBLIC:    return "Public";
         case ACCESS_REPLACE:   return "Replace";
-        default: return "NULL";
+        default: return "NULL_ACCESS";
     }
 }
 
 
-
-// Note: it is not possible to create separate
-// structures: Function and Container, both
-// inheriting from Component, just because
-// of the possibility of one converting to
-// the other in the process of parsing.
 typedef struct _Component Container;
 
 typedef struct _Component
 {
-    lchar* name1;
-    lchar* name2;
+    Str3 name1;
+    Str3 name2;
 
-    lchar* text1;
-    lchar* text2;
+    Str3 text1; // expression of main component,
+    Str3 text2; // to be parsed to produce oper2
 
-    bool isaf1; // is a function or
-    bool isaf2; // else a container
+    enum COMP_ACCESS access1; // access control type
+    enum COMP_ACCESS access2; // see enum COMP_ACCESS above
 
-    enum ACCESS access1;
-    enum ACCESS access2;
+    int replace; // count of ACCESS_REPLACE overrides
 
-    enum STATE state;
+    enum COMP_STATE state; // see enum COMP_STATE above
 
-    int replace; // count of replace-access overrides
-
-    Container *parent;
+    Container *parent; // containing container
 
 
-    // Component as a Function
-    Expression* root1;
-    Expression* root2;
+    // used when component is a function:
+    uint32_t para1[200]; // the function parameter.
+    uint32_t para2[200]; // para[0] = 1 + number of paras.
 
-    value* para1; // parameter
-    value* para2;
+    // if para[0]==1 then function has 0 parameter.
+    // if para[0]==0 then component is a variable.
+    // function can have at most 255 parameters.
 
-    List depOnMe;
-    List depend1;
-    List depend2;
-
-    value* result1;
-    value* result2;
+    // used when component is a variable:
+    value constant;     // obtained during evaluation.
+    long  instance;     // the evaluation instance.
+    Container *caller;  // the used calling container.
 
 
-    // Component as a Container
-    struct _Component *type1;
-    struct _Component *type2;
+    // operations-array obtained from parsing text2:
+    value oper1; // this is what gets evaluated
+    value oper2; // must assert(oper && *oper)
 
-    lchar* rfet1;
-    lchar* rfet2;
-    void* owner;
+    // the expected result value structure
+    uint32_t expc1[200];
+    uint32_t expc2[200];
 
-    AVLT inherits;  // inheriting components
-    AVLT inners;    // inner components
+    // used by the ':=' operator during evaluation
+    AVLT replacement;
 
-    int replacement_count;
-    const Expression* replacement[20];
+    AVLT depOnMe; // components that depend on me
+    AVLT depend1; // components depended upon by me
+    AVLT depend2;
 
+
+    // used when component is a container:
+
+    Str3 rfet1;         // Rhyscitlem Function
+    Str3 rfet2;         // Expression Text (RFET)
+
+    Container *type1;   // the inherited container
+    Container *type2;   // from: type = "<name>";
+
+    AVLT inherits;      // inheriting components
+    AVLT inners;        // inner components
+
+    void* owner;        // used by an external program
 } Component;
 
-#define c_type(c)       ((c)->type2==NULL ? (c)->type1      : (c)->type2  )
-#define c_name(c)       ((c)->name2==NULL ? (c)->name1      : (c)->name2  )
-#define c_text(c)       ((c)->name2==NULL ? (c)->text1      : (c)->text2  )
-#define c_para(c)       ((c)->name2==NULL ? (c)->para1      : (c)->para2  )
-#define c_isaf(c)       ((c)->name2==NULL ? (c)->isaf1      : (c)->isaf2  )
-#define c_root(c)       ((c)->name2==NULL ? (c)->root1      : (c)->root2  )
-#define c_rfet(c)       ((c)->name2==NULL ? (c)->rfet1      : (c)->rfet2  )
-#define c_access(c)     ((c)->name2==NULL ? (c)->access1    : (c)->access2)
-#define c_result(c)     ((c)->name2==NULL ? (c)->result1    : (c)->result2)
-#define c_depend(c)     ((c)->name2==NULL ? (c)->depend1    : (c)->depend2)
-#define c_container(c)  (c_isaf(c) ? (c)->parent : (c))
+#define c_type(c)       ( (c)->name2.ptr ? (c)->type2      : (c)->type1  )
+#define c_name(c)       ( (c)->name2.ptr ? (c)->name2      : (c)->name1  )
+#define c_text(c)       ( (c)->name2.ptr ? (c)->text2      : (c)->text1  )
+#define c_para(c)       ( (c)->name2.ptr ? (c)->para2      : (c)->para1  )
+#define c_oper(c)       ( (c)->name2.ptr ? (c)->oper2      : (c)->oper1  )
+#define c_expc(c)       ( (c)->name2.ptr ? (c)->expc2      : (c)->expc1  )
+#define c_rfet(c)       ( (c)->name2.ptr ? (c)->rfet2      : (c)->rfet1  )
+#define c_access(c)     ( (c)->name2.ptr ? (c)->access2    : (c)->access1)
+#define c_depend(c)     ( (c)->name2.ptr ? (c)->depend2    : (c)->depend1)
+#define c_iscont(c)     ( c_rfet(c).ptr ) // = false for Root Container
+#define c_container(c)  ( c_iscont(c) ? (c) : (c)->parent )
 
-
-
-void expression_remove (Expression *expression);
-value* expression_to_valueSt (Expression *expression);
 
 void component_destroy (Component *component);
-void component_remove (AVLT* tree);
 
-void inherits_obtain (Component *component, List* list, wchar* mstr, const char* text, int indent);
+Str2 inherits_obtain (Component *component, List* list, Str2 out, const char* text, int indent);
 bool inherits_remove (Component *component);
 
-void expression_print (const char* text, int indent, const Expression *expression);
-void component_print  (const char* text, int indent, const Component  *component );
+void component_print (const char* text, int indent, const Component *component);
+// 'indent' can be -2, -1 or >=0, these 3 have different behaviours
+
+bool CheckComponent (Component* component, bool finalised);
+bool CheckStr3 (const_Str3 str); // check for pointer errors
 
 #endif
-

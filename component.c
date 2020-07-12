@@ -3,15 +3,16 @@
 */
 
 #include <_stdio.h>
-#include <_texts.h>
-#include <component.h>
-#include <expression.h>
+#include "outsider.h"
+#include "component.h"
+#include "expression.h"
 #include "operations.h"
 
-static List _containers_list = {0};
-List* containers_list = &_containers_list;
+static List _container_list = {0};
+List* container_list() { return &_container_list; }
 
-static Container *RootContainer = NULL;
+static Container _rootContainer;
+static Container *rootContainer = NULL; // see component_new()
 
 int pointer_compare (const void* key1, const void* key2, const void* arg)
 {
@@ -20,682 +21,844 @@ int pointer_compare (const void* key1, const void* key2, const void* arg)
     return a<b ? -1 : a>b ? +1 : 0;
 }
 
+static Container *do_container_find (value stack, Container* current, const_Str3 pathname, bool skipFirst, bool fullAccess, bool type1only);
+
+#define MAX_LINEAGE 15
+
 /**************************************************************************************************************/
 
 
-/* read: I 'component', am depending on 'depending' */
-void depend_add (Component* component, Component *depending)
+/* read: I 'component', am depending on 'depend' */
+void depend_add (Component* component, Component *depend)
 {
-    if(component==NULL) return;
-    if(component==depending) return;
-    if(list_find(&component->depend2, NULL, pointer_compare, &depending)) return;
-    list_head_push(&component->depend2, list_new(&depending, sizeof(depending)));
+    assert(depend!=NULL);
+    if(component && component!=depend)
+        avl_do(AVL_ADD, &component->depend2, &depend,
+            sizeof(Component*), NULL, pointer_compare);
 }
-
 
 
 /* read: I 'depend', am depended upon by 'component' */
-static void depend_notify (List* depend, Component *component)
+static void depend_notify (AVLT* depend, const Component *component)
 {
-    void* node = list_head(depend);
-    for( ; node != NULL; node = list_next(node))
+    void* node = avl_min(depend);
+    for( ; node != NULL; node = avl_next(node))
     {
         Component* c = *(Component**)node;
-        if(list_find(&c->depOnMe, NULL, pointer_compare, &component)) continue;
-        list_head_push(&c->depOnMe, list_new(&component, sizeof(component)));
+        avl_do(AVL_ADD, &c->depOnMe, &component,
+            sizeof(component), NULL, pointer_compare);
     }
 }
+
 
 /* read: I 'depend', am not depended upon by 'component' */
-void depend_denotify (List* depend, const Component *component)
+void depend_denotify (AVLT* depend, const Component *component)
 {
-    void* node = list_head(depend);
-    for( ; node != NULL; node = list_next(node))
+    void* node = avl_min(depend);
+    for( ; node != NULL; node = avl_next(node))
     {
         Component* c = *(Component**)node;
-        void* dep = list_find(&c->depOnMe, NULL, pointer_compare, &component);
-        if(dep) list_delete(&c->depOnMe, dep);
+        avl_do(AVL_DEL, &c->depOnMe, &component,
+            sizeof(component), NULL, pointer_compare);
     }
 }
-
 
 /**************************************************************************************************************/
 
-// TODO: just like it happens during deletion, component_finalise() should be
-// implemented such that the child containers are resolved before their parents.
-// Otherwise something like the update_replace_count() below will have a bug.
-// This bug is that the assert(c!=NULL) will fail in the following scenario:
-// * Evaluate: "0; type="User_Interface_Definition_Text"; replace h1 = 160;"
-// * then later evaluate: "0;", that is removing both 'type' and 'replace'.
 
-static inline void update_replace_count (Component* component, int offset)
+static Str3 setEnd (Str3 str)
 {
-    Component *c = component_find(component->parent, c_name(component), NULL, true);
-    if(c==NULL) return; //assert(c!=NULL);
-    c->replace += offset; assert(c->replace>=0);
+    assert(str.ptr != NULL);
+    if(str.ptr && !str.end)
+    {
+        str.end = str.ptr;
+        while(str.end->chr.c) // get to char '\0'
+            str.end = str.end->next;
+    }
+    return str;
 }
 
-static AVLT dependence = { 0, 0, sizeof(Component*), NULL, pointer_compare };
+// NOTE: if doing component_evaluate() before component_finalise(),
+// then assume component->replace to != 0 inside operations_evaluate().
+static void update_replace_count (Component* component, int offset)
+{
+    Component *c = do_container_find(NULL, component, c_name(component), true, false, offset<0);
+    assert(c!=NULL); if(c) { c->replace += offset; assert(c->replace >= 0); }
+}
+
+bool CheckRoot (bool success, int type)
+{
+    if(0 && type>=2)
+    {   component_print(" |  ", 0, rootContainer);
+        if(type<2) puts2(L"--------------------------------------------------------\n");
+        else puts2(L"============================================================================\n");
+    }
+    return CheckComponent(rootContainer, success);
+}
+
 
 static void component_finalise (Component *component, bool success)
 {
+    assert(CheckRoot(false, 0));
     if(component==NULL) return;
+    assert(component->state!=ISPARSE);
+    assert(component->parent!=NULL);
+    if(component->parent==NULL) return;
+    component->instance = 0;
     if(success)
     {
-        if(component->state==DELETED)
+        if(component->state==NOFOUND)
         {
-            if(component->access1 == ACCESS_REPLACE) update_replace_count(component, -1);
-            // line above must come before the component destruction below
-
-            // this section is quite tricky, but the 'while' line below tells alot!
-            if(component->inners.size==0)
-            {   Container* parent;
-                do{ parent = component->parent;
-                    component_destroy(component);
-                    component = parent;
-                } while(parent->state==DELETED && parent->inners.size==0);
-            }
+            // Note: the 'if' below is not placed inside component_destroy() because
+            // all other calls to it are guaranteed to remove the inheritance hierarchy.
+            // Also for this same reason a crash may occured due to accessing freed component.
+            if(component->access1 == ACCESS_REPLACE)
+                update_replace_count(component, -1);
+            // line above must come first
+            component_destroy(component);
         }
         else
         {
-            if(component->state==CREATED && !component->isaf2) list_head_push(containers_list, list_new(&component, sizeof(component)));
+            if(strEnd3(component->name2))   // if was not parsed, then a different one
+            {                               // that got parsed depends on this component
+                assert(component->name2.ptr==NULL && component->name2.end==NULL);
+                assert(component->text2.ptr==NULL && component->text2.end==NULL);
+                assert(component->para2[0] == 0);
+                assert(component->type2 == NULL);
+                assert(component->rfet2.ptr == NULL);
+            }
+            else
+            {
+                if(component->state==CREATED && c_iscont(component))
+                    list_head_push(container_list(), list_new(&component, sizeof(component)));
 
-            if(component->access1 != ACCESS_REPLACE && component->access2 == ACCESS_REPLACE) update_replace_count(component, +1);
-            if(component->access1 == ACCESS_REPLACE && component->access2 != ACCESS_REPLACE) update_replace_count(component, -1);
+                // if conversion from container to non-container
+                if(component->state==DOPARSE
+                && component->rfet1.ptr!=NULL   // if was a container
+                && component->rfet2.ptr==NULL)  // if not a container
+                {
+                    // then remove container from list of containers
+                    void* node = list_find(container_list(), NULL, pointer_compare, &component);
+                    assert(node!=NULL); list_delete(container_list(), node);
 
-            lchar_free(component->name1); component->name1 = component->name2; component->name2 = NULL;
-            lchar_free(component->text1); component->text1 = component->text2; component->text2 = NULL;
-            value_free(component->para1); component->para1 = component->para2; component->para2 = NULL;
-            lchar_free(component->rfet1); component->rfet1 = component->rfet2; component->rfet2 = NULL;
+                    // also remove inners of this non-container
+                    Component c = {{0}};
+                    c.inners = component->inners;
+                    component_destroy(&c);
+                }
 
-            component->isaf1 = component->isaf2;
-            component->access1 = component->access2;
+                if(component->access1 != ACCESS_REPLACE
+                && component->access2 == ACCESS_REPLACE) update_replace_count(component, +1);
+
+                if(component->access1 == ACCESS_REPLACE
+                && component->access2 != ACCESS_REPLACE) update_replace_count(component, -1);
+
+                assert(component->name2.ptr != component->name1.ptr); str3_free(component->name1);
+                assert(component->text2.ptr != component->text1.ptr);
+                assert(!component->text2.ptr == !component->text2.end);
+                component->name1 = component->name2; component->name2 = C37(NULL);
+                component->text1 = component->text2; component->text2 = C37(NULL);
+                memcpy(component->para1, component->para2, sizeof(component->para2));
+                *component->para2 = 0;
+
+                Str3 r1 = component->rfet1;
+                Str3 r2 = component->rfet2;     // replace rfet inside that
+                if(r1.end && r2.ptr && !r2.end) // of the parent container
+                {
+                    r2 = setEnd(r2);
+                    assert(!strEnd3(r2));
+                    assert(r2.ptr->prev==NULL);
+
+                    lchar *chr;
+                    chr = r1.ptr->prev;
+                    r2.ptr->prev = chr;
+                    chr->next = r2.ptr;
+
+                    chr = r1.end->next;
+                    r2.end->next = chr;
+                    chr->prev = r2.end;
+
+                    assert(r2.end->chr.c =='\0');
+                    assert(r1.end->chr.c == '}');
+                    r2.end->chr.c = r1.end->chr.c;
+                    r1.end->chr.c = '\0';
+
+                    r1.ptr->prev = NULL;
+                    r1.end->next = NULL;
+                    r1.end = NULL; // prepare to free r1
+
+                    assert(CheckStr3(r1));
+                    assert(CheckStr3(r2));
+                }
+                r1 = str3_free(r1);
+                component->rfet1 = r2;
+                component->rfet2 = C37(NULL);
+
+                if(component->type1 != component->type2)
+                {   if(component->type1 && !avl_do(AVL_DEL, &component->type1->inherits, &component, 0,0,0)) {assert(false);}
+                    if(component->type2 &&  avl_do(AVL_ADD, &component->type2->inherits, &component, 0,0,0)) {assert(false);}
+                }
+                component->type1 = component->type2;
+                component->type2 = NULL;
+
+                component->access1 = component->access2;
+            }
+            avl_free(&component->replacement);
+
             depend_denotify(&component->depend1, component);
             depend_notify  (&component->depend2, component);
-            list_free(&component->depend1); component->depend1 = component->depend2; list_clear(&component->depend2);
-            if(component->root2 != NULL) { expression_remove(component->root1); component->root1 = component->root2; component->root2 = NULL; }
-            if(component->isaf1) component_remove(&component->inners); // if container to function conversion
+            avl_free(&component->depend1);
+            component->depend1 = component->depend2;
+            avl_clear(&component->depend2);
 
-            if(component->type1 != component->type2) {
-                if(component->type1) avl_do(AVL_DEL, &component->type1->inherits, &component, 0,0,0);
-                if(component->type2) avl_do(AVL_ADD, &component->type2->inherits, &component, 0,0,0);
-            } component->type1 = component->type2; component->type2 = NULL;
+            assert(component->oper2!=NULL);
+            value_free(component->oper1);
+            component->oper1 = component->oper2;
+            component->oper2 = NULL;
 
             component->state = ISPARSE;
         }
     }
     else
-    {   if(component->state==CREATED)
-        {
-            // this section is quite tricky, but the 'while' line below tells alot!
-            if(component->inners.size==0)
-            {   Container* parent;
-                do{ parent = component->parent;
-                    component_destroy(component);
-                    component = parent;
-                } while(parent->state==DELETED && parent->inners.size==0);
-            }
-            else component->state = DELETED;
-        }
+    {
+        if(component->state==CREATED)
+            component_destroy(component);
         else
         {
-            lchar_free(component->name2); component->name2 = NULL;
-            lchar_free(component->text2); component->text2 = NULL;
-            value_free(component->para2); component->para2 = NULL;
-            lchar_free(component->rfet2); component->rfet2 = NULL;
+            assert(component->name2.ptr != component->name1.ptr);
+            assert(component->text2.ptr != component->text1.ptr);
+            assert(!component->text2.ptr == !component->text2.end);
 
-            component->isaf2 = component->isaf1;
-            component->access2 = component->access1;
-            list_free(&component->depend2);
-            expression_remove(component->root2); component->root2 = NULL;
+            str3_free(component->name2);
+            str3_free(component->rfet2);
+            value_free(component->oper2);
+
+            component->name2 = C37(NULL);
+            component->text2 = C37(NULL);
+            component->rfet2 = C37(NULL);
+            component->oper2 = NULL;
+            *component->para2 = 0;
+
+            avl_free(&component->replacement);
+            avl_free(&component->depend2);
             component->type2 = NULL;
 
             component->state = ISPARSE;
         }
     }
+    assert(CheckRoot(false, 1));
 }
+
+
+typedef struct { Component* component; int children; } CompDep;
+
+static AVLT dependence = { 0, 0, sizeof(CompDep), NULL, pointer_compare };
 
 static void dependence_notify (Component *component)
 {
-    if(component==NULL) return;
-    if(!avl_do(AVL_ADD, &dependence, &component, 0,0,0)) memory_alloc("Dependence");
+    if(!component) return;
+    CompDep cp = { component, 0 };
+    if(!avl_do(AVL_ADD, &dependence, &cp, 0,0,0))
+        memory_alloc("Dependence"); // on a new addition
 
-    if(!component->isaf1) return; // if is a container TODO: eh, so what if is a container?
+    if(component->state==CREATED) return;
+    if(component->state!=NOFOUND
+    && component->state!=ISFOUND
+    && component->state!=DOFOUND)
+       component->state =DOPARSE;
 
-    if(component->state == NOPARSE) component->state = DOPARSE; // TODO: consider commenting this line
-
-    if(component->state != ISPARSE) return;
-    component->state = DOPARSE;
-
-    void* node = list_head(&component->depOnMe);
-    for( ; node != NULL; node = list_next(node))
+    void* node = avl_min(&component->depOnMe);
+    for( ; node != NULL; node = avl_next(node))
         dependence_notify(*(Component**)node);
 }
 
-/*bool dependence_evaluate ()
-{
-    void* ptr = avl_min(&dependence);
-    for( ; ptr!=NULL; ptr = avl_next(ptr))
-        if(!component_evaluate(*(Component**)ptr,0,0))
-            return false;
-    return true;
-}*/
-
-bool dependence_parse ()
-{
-    void* ptr = avl_min(&dependence);
-    for( ; ptr!=NULL; ptr = avl_next(ptr))
-        if(!component_parse(*(Component**)ptr))
-            return false;
-    return true;
-}
 
 void dependence_finalise (bool success)
 {
     void* ptr = avl_min(&dependence);
     for( ; ptr!=NULL; ptr = avl_next(ptr))
     {
-        component_finalise(*(Component**)ptr, success);
-        memory_freed("Dependence");
+        CompDep* cp = (CompDep*)ptr;
+        Component* comp = cp->component;
+        cp = (CompDep*)avl_do(AVL_FIND, &dependence, &comp->parent, 0,0,0);
+        if(cp) cp->children++;
+    }
+
+    ptr = avl_min(&dependence);
+    for( ; ptr!=NULL; ptr = avl_next(ptr))
+    {
+        CompDep* cp = (CompDep*)ptr;
+        while(cp && cp->children==0)
+        {
+            cp->children--; // prevent any future re-processing
+            Component* comp = cp->component;
+            cp = (CompDep*)avl_do(AVL_FIND, &dependence, &comp->parent, 0,0,0);
+            if(cp) cp->children--;
+            component_finalise(comp, success);
+            memory_freed("Dependence");
+        }
     }
     avl_free(&dependence);
+    assert(CheckRoot(true, 2));
 }
 
 
+bool dependence_parse (value stack)
+{
+    void* ptr = avl_min(&dependence);
+    for( ; ptr!=NULL; ptr = avl_next(ptr))
+        if(!component_parse(stack, *(Component**)ptr))
+            return false;
+    /*ptr = avl_min(&dependence);
+    for( ; ptr!=NULL; ptr = avl_next(ptr))
+        if(!component_evaluate(...))
+            return false;*/
+    return true;
+}
+
 /**************************************************************************************************************/
 
-typedef struct _InnerFunction {
-    lchar* name;
-    lchar* text;
-    value* para;
-    enum ACCESS access;
-} InnerFunction;
+typedef struct _Inner {
+    Str3 name, text, para;
+    enum COMP_ACCESS access;
+} Inner;
 
-typedef struct _InnerContainer {
-    lchar* rfet;
-    enum ACCESS access;
-} InnerContainer;
 
-static bool component_extract (const lchar* input, List* innerFunctions, List* innerContainers, wchar* errormessage)
+static bool component_extract (value stack, const_Str3 input, List* inners)
 {
-    int size, brackets;
     const Expression *nextItem;
-    Expression* expression;
-    const lchar* start;
-    lchar* str = NULL;
-    lchar* name = NULL;
-    value* para = NULL;
-    enum ACCESS access;
-    bool error=false;
     bool is_main_comp = true;
+    assert(inners!=NULL);
 
-    InnerFunction  ifunc;
-    InnerContainer icont;
-    assert(innerFunctions!=NULL && innerContainers!=NULL);
+    if(strEmpty3(input,0)) { setError(stack, L"Empty input."); return false; }
 
-    if(isEmpty3(input,0)) { strcpy21(errormessage, "Empty input."); return false; }
-
-    while(input->wchr!=0) // while getting components
+    while(!strEnd3(input)) // while getting components
     {
         /* Step0: initialise */
-        lchar_free(name);  name = NULL;
-        value_free(para);  para = NULL;
-        access = ACCESS_PROTECTED;
+        const_Str3 str = {0};
+        Inner inner = {{0}};
+        inner.access = is_main_comp ? ACCESS_PRIVATE : ACCESS_PROTECTED;
 
         if(!is_main_comp)
         {
             /* Step1: Obtain component access control */
-            nextItem = get_next_item (&input, &str, 0,0);
-            if(nextItem==NULL || input->wchr==0) break;
+            nextItem = get_next_item (stack, &input, &str, 0,0);
+            if(nextItem==NULL || strEnd3(input)) break;
 
-            bool b=0;
-            if(0==strcmp31(str,"private"  )) { b=1; access = ACCESS_PRIVATE; }
-            if(0==strcmp31(str,"enclosed" )) { b=1; access = ACCESS_ENCLOSED; }
-            if(0==strcmp31(str,"protected")) { b=1; access = ACCESS_PROTECTED; }
-            if(0==strcmp31(str,"public"   )) { b=1; access = ACCESS_PUBLIC; }
-            if(0==strcmp31(str,"replace"  )) { b=1; access = ACCESS_REPLACE; }
+            int access = -1;
+            if(0==strcmp31(str,"private"  )) access = ACCESS_PRIVATE;
+            if(0==strcmp31(str,"enclosed" )) access = ACCESS_ENCLOSED;
+            if(0==strcmp31(str,"protected")) access = ACCESS_PROTECTED;
+            if(0==strcmp31(str,"public"   )) access = ACCESS_PUBLIC;
+            if(0==strcmp31(str,"replace"  )) access = ACCESS_REPLACE;
 
             /* Step2: Obtain the component */
-            if(b)
-            {   nextItem = get_next_item (&input, &str, 0,0);
-                if(nextItem==NULL || input->wchr==0) break;
+            if(access != -1)
+            {
+                inner.access = access;
+                nextItem = get_next_item (stack, &input, &str, 0,0);
+                if(nextItem==NULL || strEnd3(input)) break;
             }
 
             /* Step2.0: Obtain component as an inner-container */
             if(0==strcmp31(str,"\\rfet"))
             {
-                if(input->wchr != '{')
-                { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nExpected '{' directly after \\rfet.", input); error=true; break; }
+                if(sChar(input) != '{')
+                { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nExpected '{' directly after \\rfet.", input); break; }
 
-                size = 1;
-                start = input = input->next; // skip '{'
-                while(true)
+                input = sNext(input);       // skip '{'
+                str.ptr = input.ptr;        // set start at after '{'
+                int brackets=1;
+                while(brackets)
                 {
-                    input = lchar_next(input);
-                    if(input->wchr=='{') size++;
-                    if(input->wchr=='}') size--;
-                    if(input->wchr==0)
-                    { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nExpected a closing '}'.", input); error=true; break; }
-                    if(size==0) break;
+                    if(strEnd3(input)) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nExpected a closing '}'.", input); break; }
+                    wchar c = sChar(input);
+                    if(c=='{') brackets++;  // TODO: also skip "...{..." and '{'
+                    if(c=='}') brackets--;
+                    input = strNext3(input);
                 }
-                if(size!=0) break;
+                if(brackets) break;         // if error
+                str.end = sPrev(input).ptr; // set end at before '}'
 
-                size = strlen3S(start, input);
-                astrcpy33S (&str, start, size);
-                input = input->next; // skip '}'
-
-                icont.rfet = str; str=NULL;
-                icont.access = access;
-                list_tail_push(innerContainers, list_new(&icont, sizeof(icont)));
+                inner.text = str;
+                list_tail_push(inners, list_new(&inner, sizeof(inner)));
                 continue;
             }
 
-            if(str->wchr=='\\')
-            { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nOn '\\4': expected \\rfet{ only.", str); error=true; break; }
+            if(sChar(str)=='\\')
+            { setErrorE(stack, L"Error on '%s' at (%s,%s) in %s:\r\nExpected \\rfet{ only.", str); break; }
 
-            if(!(nextItem->type & AVARIABLE))
-            { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nOn '\\4': expected a component name.", str); error=true; break; }
+            if(nextItem->ID != SET_PARAMTER)
+            { setErrorE(stack, L"Error on '%s' at (%s,%s) in %s:\r\nExpected a component name instead.", str); break; }
 
-            else { name = str; str=NULL; }
+            else inner.name = str;
 
-            nextItem = get_next_item (&input, &str, 0,0);
-            if(nextItem==NULL || input->wchr==0) break;
+            nextItem = get_next_item (stack, &input, &str, 0,0);
+            if(nextItem==NULL || strEnd3(input)) break;
         }
 
-        if(is_main_comp && input->wchr=='\\' && input->next->wchr=='(')
+        if(is_main_comp && sChar(input)=='\\' && sChar(sNext(input))=='(')
         {
             is_main_comp = false;
-            input = input->next;
-            nextItem = get_next_item (&input, &str, 0,0);
-            if(nextItem==NULL || input->wchr==0) break;
+            input = sNext(input);
+            nextItem = get_next_item (stack, &input, &str, 0,0);
+            if(nextItem==NULL || strEnd3(input)) break;
         }
 
         if(!is_main_comp)
         {
             /* Step3: Obtain component parameter */
-            if(str->wchr == *TWSF(Opened_Bracket_1))
+            if(sChar(str) == '(')
             {
                 // if '(' then obtain parameter structure
-                bool empty=true;
-                brackets=1;
-                start=input->prev;
-                while(input->wchr!=0)
+                int brackets=1;
+                while(brackets)
                 {
-                    if(input->wchr == *TWSF(Opened_Bracket_1)) brackets++;
-                    if(input->wchr == *TWSF(Closed_Bracket_1)) brackets--;
-                    input = lchar_next(input);
-                    if(brackets==0) break;
-                    if(!isSpace(input->wchr)) empty=false;
+                    if(strEnd3(input)) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nExpected a closing ')'.", input); break; }
+                    wchar c = sChar(input);
+                    if(c=='(') brackets++;
+                    if(c==')') brackets--;
+                    input = strNext3(input);
                 }
-                if(!empty)
-                {
-                    size = strlen3S(start, input);
-                    astrcpy33S (&str, start, size);
+                if(brackets) break;     // if error
+                str.end = input.ptr;    // set end at after ')'
+                inner.para = str;
 
-                    expression = parseExpression (str,0);
-                    if(expression==NULL) { error=true; break; }
-
-                    para = expression_to_valueSt (expression);
-                    expression_remove(expression); expression=NULL;
-                }
-                nextItem = get_next_item (&input, &str, 0,0);
-                if(nextItem==NULL || input->wchr==0) break;
+                nextItem = get_next_item (stack, &input, &str, 0,0);
+                if(nextItem==NULL || strEnd3(input)) break;
             }
 
             /* Step 4: final check for a '=' assignment operator */
-            if(str->wchr != *TWSF(Assignment))
-            { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nOn '\\4': expected assignment '=' instead.", str); error=true; break; }
+            if(sChar(str) != '=')
+            { setErrorE(stack, L"Error on '%s' at (%s,%s) in %s:\r\nExpected assignment '=' instead.", str); break; }
         }
         else is_main_comp = false;
 
-        /* Step 5: collect the Math Function Expression Text */
-        start=input;
-        size=0;
-        while(input->wchr != 0 && input->wchr != *TWSF(EndOfStatement))
-            input = lchar_next(input);
-        size = strlen3S(start, input);
-        if(input->wchr != 0) input = input->next; // skip EndOfStatement
-        astrcpy33S (&str, start, size?size:1); // str = RFET
-        if(size==0) str->wchr=0;
+        /* Step 5: collect the RFET */
+        str.ptr = input.ptr;
+        do{ const_Str3 s={0}; // not used
+            nextItem = get_next_item (stack, &input, &s, 0,0);
+        } while(nextItem && nextItem->ID != EndOfStatement);
+        str.end = input.ptr;
+        if(nextItem) str.end = str.end->prev; // unskip the ';'
 
         /* Step 7: iterative tree-traversal to record sub-components of a component's result-structure */
-        /*if(VST_LEN(cname) > 1)
-        {
-            component->cname2 = cname;
-            tcomponent = component;
-            j = 0;
-            while(1)
-            {
-                if(isString(*cname)) // if leave node is reached
-                {
-                    tmp = temp; tmp += CNtoSTR(tmp, tcomponent);
-                    for(i=1; i<=j; i++) tmp += sprintf1(tmp, "[%d]", index[i]);
-                    astrcpy31 (&str, temp);
-                        {
-                          name=str;
-                          while(1)
-                          { lchar_copy(name, getString(*cname));
-                            if(name->wchr==0) break;
-                            name = name->next;
-                          } name=NULL;
-                        }
-                    astrcpy33 (&name, getString(*cname));
-                    avaluecpy (&parameter, tcomponent->parameter2);
+        // not implemented
 
-        // Step 8: collect the Math Function Expression Text //
-
-                    cname++;
-                    while(1)
-                    {
-                        if(j==0) break;
-                        if(cname==end[j]) j--;
-                        else { index[j]++; break; }
-                    }
-                    if(j==0) break;
-                }
-                else // if not leave node
-                {
-                    ++j;  index[j] = 0;
-                    end[j] = cname + VST_LEN(cname);
-                    cname++;
-                }
-            }
-            cname=NULL; // note: do not free
-            if(error) break;
-        }*/
-
-        ifunc.name = name; name=NULL;
-        ifunc.text = str; str=NULL;
-        ifunc.para = para; para=NULL;
-        ifunc.access = access;
-        list_tail_push(innerFunctions, list_new(&ifunc, sizeof(ifunc)));
+        inner.text = str;
+        list_tail_push(inners, list_new(&inner, sizeof(inner)));
     }
-
-    lchar_free(str);
-    lchar_free(name);
-    value_free(para);
-    return !error;
+    return strEnd3(input); // return true if no error
 }
-
 
 
 static int avl_component_cmpr (const void* key1, const void* key2, const void* arg)
 { return strcmp33( c_name((const Component*)key1), c_name((const Component*)key2) ); }
 
 // note: after call, set name to NULL
-static Component* component_new (Container* parent, lchar* name, bool isaf)
+static Component* component_new (Container* parent, Str3 name)
 {
+    Component *component;
+    if(parent==NULL)
+    {   assert(rootContainer==NULL);
+        component = rootContainer = &_rootContainer;
+    }else component = (Component*)avl_new(NULL, sizeof(Component));
     memory_alloc("Component");
-    Component* component = (Component*)avl_new(NULL, sizeof(Component));
     component->parent = parent;
     component->state = CREATED;
-    component->isaf2 = isaf;
     component->name2 = name;
     component->inherits.keysize = sizeof(Component*);
     component->inherits.compare = pointer_compare;
-    if(parent) avl_do(AVL_PUT, &parent->inners, component, sizeof(Component), NULL, avl_component_cmpr);
+    component->inners.keysize = sizeof(Component);
+    component->inners.compare = avl_component_cmpr;
+    if(parent) avl_do(AVL_PUT, &parent->inners, component, 0,0,0);
     return component;
 }
 
 
-
-static bool component_insert (Container* container, List* innerFunctions, List* innerContainers, wchar* errormessage)
+static bool check_access(value stack, int from, int to, const_Str3 name)
 {
-    InnerFunction*  ifunc = (InnerFunction *)list_head(innerFunctions );
-    InnerContainer* icont = (InnerContainer*)list_head(innerContainers);
+    if(from <= to) return true;
+    const_Str2 argv[3];
+    Str2 msg = (Str2)(stack+1000); // +1000 space reserved for result
+    argv[1] = msg; msg = 1+strcpy21(msg, access2str(from));
+    argv[2] = msg; msg = 1+strcpy21(msg, access2str(to)); // 1+ so to skip '\0'
+    argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\nCannot downgrade access from %s to %s.";
+    setMessageE(stack, 0, 3, argv, name);
+    return false;
+}
+
+
+static bool component_insert (value stack, Container* container, List* inners)
+{
+    Inner* inner = (Inner*)list_head(inners);
 
     Component* component;
-    lchar* name  = NULL;
-    lchar* text  = NULL;
-    value* para  = NULL;
-    enum ACCESS access;
+    Str3 name, text, para;
+    enum COMP_ACCESS access;
 
     bool error = container==NULL;
-    if(!error)
-    {   component = (Component*)avl_min(&container->inners);
+    if(container)
+    {
+        component = (Component*)avl_min(&container->inners);
         for( ; component != NULL; component = (Component*)avl_next(component))
-        {   if(component->state!=ISPARSE) component_print("component_insert ", -1, component);
-            assert(component->state==ISPARSE);
+        {
+                 if(component->state==ISPARSE) component->state = ISFOUND;
+            else if(component->state==DOPARSE) component->state = DOFOUND;
+            else{
+                component_print("component_insert ", -1, component);
+                assert(component->state==ISPARSE || component->state==DOPARSE);
+            }
         }
     }
-    while(ifunc != NULL && !error)
+    if(!error)
+    while(inner)
     {
-        name  = ifunc->name;
-        text  = ifunc->text;
-        para  = ifunc->para;
-        access= ifunc->access;
-        ifunc = (InnerFunction*)list_next(ifunc);
+        name  = inner->name;
+        text  = inner->text;
+        para  = inner->para;
+        access= inner->access;
+        inner = (Inner*)list_next(inner);
 
-        if(!name) component = container; // if is_main_comp
+        if(text.end->chr.c=='}' // if an inner container
+        && sChar(sPrev(text))=='{')
+        {
+            Container *cont = container_parse(stack, container, C37(NULL), text);
+            if(!cont) { error=true; break; }
+            else cont->access2 = access;
+            continue;
+        }
+
+        uint32_t param[1000];
+        if(strEnd3(para))       // if component is a variable
+            param[0] = 0;       // then mark as variable
+        else                    // else component is a function
+        {
+            param[0] = 1;       // assume a function with 0 paras
+          /*para.ptr = para.ptr->next;  // remove '('
+            para.end = para.end->prev;  // remove ')'
+            if(!strEmpty3(para,0))*/
+            {
+                if(VERROR(parseExpression(stack, para, NULL))) { error=true; break; }
+                assert(stack == vGet(stack));
+                value v = 1+param;
+
+                memset(v, 0, sizeof(OperEval));
+                if(VERROR(operations_evaluate(v, stack)))
+                { assert(false); error=true; break; }
+
+                assert(v==vGet(v)); // TODO: TODO: call value_resolve()
+
+                long size = 1+vSize(v); // 1+ since param[0] is a separate data
+                if(size >= SIZEOF(component->para2))
+                {
+                    setErrorE(stack, L"Error at (%2,%3) in %4:\r\nFunction parameter is too long.", para);
+                    error=true; break;
+                }
+                const_value n=v;
+                while(n < param+size) // count the number of paras
+                {
+                    if((*n >> 28)==VAL_VECTOR) n += 2; // skip vector header
+                    else {
+                        param[0]++; // count para
+                        assert(isStr2(n));
+                        n = vNext(n);
+                    }
+                }
+            }
+        }
+
+        if(name.ptr==NULL) component = container; // if is_main_comp
         else
         {
             // set to private irrespective of user-defined access type
             if(0==strcmp31(name,"name")) access = ACCESS_PRIVATE;
 
             /* Step 6: record the extracted component */
-            component = component_find (container, name, errormessage, 0);
+            component = component_find (stack, container, name, 0);
             int i = component==NULL ? 0                 // if not already defined
-                  : component->parent!=container ? 1    // if inherited from a parent-container
+                  : component->parent!=container ? 1    // if inheriting from a sibling container
                   : 2 ;
-            if(i==1 && c_access(component) > access)
-            {
-                strcpy21(ErrStr0, access2str(c_access(component)));
-                strcpy21(ErrStr1, access2str(access));
-                set_message(errormessage, L"Error in \\1 at \\2:\\3 on '\\4':\r\nCannot downgrade access type: \\5 to \\6.", name, ErrStr0, ErrStr1);
+            if(i==1 && !check_access(stack, c_access(component), access, name))
+            {   error=true; break;
+            }
+            else if(i!=2) {
+                component = component_new(container, name);
+                name=C37(NULL);
+            }
+            else if(!strEnd3(component->name2)) // if already exists
+            {   setErrorE(stack, TWST(Component_Already_Defined), name);
                 error=true; break;
             }
-            if(i!=2) { component = component_new(container, name, true); name=NULL; }
+            //else if(component->state==ISFOUND
+            //     && 0==strcmp33(c_text(component), text)        // if exact same expression
+            //     && 0==value_compare(c_para(component), param))  // and parameter, then no parse
+            //     component->state = NOPARSE; // TODO: but expression.name needs to be updated
+            else component->state = DOPARSE;
 
-            else if(component->name2!=NULL) // if already exists
-            { set_message(errormessage, TWST(Component_Already_Defined), name); error=true; break; }
-
-            else if(0!=strcmp33( c_text(component), text)
-                 || 0!=value_compare( c_para(component), para))
-                 component->state = DOPARSE;
-            else component->state = NOPARSE;
-        }
-
-        if(name) {
-        assert(component->name2==NULL); component->name2 = name; name=NULL; }
-        assert(component->text2==NULL); component->text2 = text; text=NULL;
-        assert(component->para2==NULL); component->para2 = para; para=NULL;
-        component->access2 = access;
-        dependence_notify(component);
-
-        if(access==ACCESS_REPLACE)
-        {   Component* c = component_find(container, c_name(component), errormessage, true);
-            if(c==NULL) { error=true; break; }
-            depend_add(component, c);
-        }
-    }
-    while(icont != NULL && !error)
-    {
-        access = icont->access;
-        Container *cont = container_parse(container, NULL, icont->rfet);
-        icont  = (InnerContainer*)list_next(icont);
-        if(!cont) { error=true; break; }
-        else cont->access2 = access;
-    }
-
-    while(ifunc != NULL)
-    {
-        lchar_free(ifunc->name);
-        lchar_free(ifunc->text);
-        value_free(ifunc->para);
-        ifunc = (InnerFunction*)list_next(ifunc);
-    }
-    while(icont != NULL)
-    {
-        lchar_free(icont->rfet);
-        icont = (InnerContainer*)list_next(icont);
-    }
-    if(!error)
-    {   component = (Component*)avl_min(&container->inners);
-        for( ; component != NULL; component = (Component*)avl_next(component))
-            if(component->state==ISPARSE)
-            {  component->state = DELETED;
-               dependence_notify(component);
+            if(name.ptr) // if not a new component
+            {
+                assert(component->name2.ptr==NULL);
+                component->name2 = name;
             }
+            component->access2 = access;
+        }
+        //if(param && sChar(text) == '{' && sChar(sPrev(text)) != '=')
+        //    component->instance = 1; // mark component as a procedure
+
+        memcpy(component->para2, param, sizeof(component->para2));
+        assert(component->text2.ptr==NULL);
+        component->text2 = text;
+
+        if(component->state!=NOPARSE)
+            dependence_notify(component);
     }
-    lchar_free(name);
-    lchar_free(text);
-    value_free(para);
-    list_free(innerFunctions);
-    list_free(innerContainers);
+    if(container)
+    {
+        component = (Component*)avl_min(&container->inners);
+        for( ; component != NULL; component = (Component*)avl_next(component))
+        {
+            if(component->state==ISFOUND) component->state = error ? ISPARSE : NOFOUND;
+       else if(component->state==DOFOUND) component->state = error ? DOPARSE : NOFOUND;
+       else continue; // avoid line below
+            if(!error) dependence_notify(component);
+        }
+    }
+    list_free(inners);
     return !error;
 }
 
 
-static bool get_string_expr (const lchar* lstr, lchar** name_ptr, wchar* errormessage)
+bool isSpecial3 (const_Str3 name)
 {
-    const Expression* expression = get_next_item (&lstr, name_ptr, 0,0);
-    const lchar* name = *name_ptr;
-    if(expression==NULL || expression->ID != SET_STRING)
-    { set_message(errormessage, L"Error in '\\1' at \\2:\\3:\r\nname '\\4' must be a direct string.", name); return false; }
-    for(lstr=name; lstr->wchr!=0 && lstr->wchr!='|'; lstr = lstr->next);
-    if(lstr->wchr=='|' || 0==strcmp31(name, ".") || 0==strcmp31(name, ".."))
-    { set_message(errormessage, L"Error in \\1 at \\2:\\3 on '\\4':\r\nMust not contain '|' and must not be '.' nor '..'.", name); return false; }
+    int dots = 0;
+    const_Str3 s;
+    for(s=name; !strEnd3(s); s = sNext(s))
+    {
+        wchar c = sChar(s);
+        if(c=='|') { dots=0; break; }
+        else if(c=='.') dots++;
+        else dots = 3;
+    }
+    return dots<3;
+}
+#define Component_not_be_Special L"Error on '%s' at (%s,%s) in %s:\r\nMust not contain '|' and not be \"\", \".\" nor \"..\"."
+
+
+static bool get_string_expr (value stack, const_Str3 strExpr, const_Str3* name)
+{
+    const_Str2 argv[2];
+    const_Str3 s = strExpr;
+    const Expression* expression = get_next_item (stack, &s, name, 0,0);
+
+    // note: 's' now points to after the collected 'name'
+    while(!strEnd3(s) && isSpace(sChar(s))) s = sNext(s);
+    if(!strEnd3(s)) expression = NULL;
+
+    if(!expression || !name->ptr || sChar(*name) != '"')
+    {
+        argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\nGiven name must be a direct string.";
+        setMessageE(stack, 0, 1, argv, strExpr); return false;
+    }
+    name->ptr = name->ptr->next; // skip starting "
+    name->end = name->end->prev; // skip ending "
+    assert(name->end->chr.c == '"');
+
+    long size = strlen3(*name);
+    if(size > MAX_NAME_LEN)
+    {
+        argv[0] = L"Error at (%2,%3) in %4:\r\nString of length %s is too long.";
+        argv[1] = TIS2(0,size);
+        setMessageE(stack, 0, 2, argv, *name); return false;
+    }
+    if(isSpecial3(*name))
+    {
+        argv[0] = Component_not_be_Special;
+        setMessageE(stack, 0, 1, argv, *name); return false;
+    }
     return true;
 }
 
 
-Container* container_parse (Container* parent, lchar* name, lchar* text)
+Container* container_parse (value stack, Container* parent, Str3 name, Str3 text)
 {
-    List _innerFunctions  = {0}, *innerFunctions  = &_innerFunctions;
-    List _innerContainers = {0}, *innerContainers = &_innerContainers;
-
-    if(!RootContainer) RootContainer = component_new(NULL, NULL, false);
-    if(!parent) parent = RootContainer;
-    Container* container=NULL;
+    if(!rootContainer) rootContainer = component_new(NULL, C37(NULL));
+    if(!parent) parent = rootContainer;
+    Container* container;
+    List _inners={0}, *inners = &_inners;
 
     bool skip = false;
     bool found = false;
     bool success = false;
-    const lchar* lstr=NULL;
-    const lchar* type=NULL;
-    wchar* errormessage = errorMessage();
+    const_Str3 type = {0};
+    const_Str2 argv[2];
 
     while(true) // not a loop
     {
-        if(text)
-        {
-            if(!component_extract (text, innerFunctions, innerContainers, errormessage)) break;
+        int i=0; container = parent;
+        for( ; container != rootContainer; container = container->parent) i++;
+        if(i>=MAX_LINEAGE) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nInner container is too deep down the lineage.", text); break; }
+        container=NULL;
 
-            InnerFunction*  ifunc = (InnerFunction*)list_head(innerFunctions);
-            for( ; ifunc != NULL; ifunc = (InnerFunction*)list_next(ifunc))
+        if(!strEnd3(name)){
+            const_Str3 lstr = name; if(sChar(lstr)=='|') lstr = sNext(lstr);
+            if(isSpecial3(lstr)) { setErrorE(stack, Component_not_be_Special, name); break; }
+        }
+        if(!strEnd3(text))
+        {
+            if(!component_extract (stack, text, inners)) break;
+            const_Str3 lstr = {0};
+
+            Inner* inner = (Inner*)list_head(inners);
+            for( ; inner; inner = (Inner*)list_next(inner))
             {
-                if(0==strcmp31(ifunc->name, "name")) lstr = ifunc->text;
-                if(0==strcmp31(ifunc->name, "type")) type = ifunc->text;
+                if(0==strcmp31(inner->name, "name")) lstr = inner->text;
+                if(0==strcmp31(inner->name, "type")) type = inner->text;
             }
-            if(lstr!=NULL) { if(get_string_expr(lstr, &name, errormessage)) found=true; else break; }
+            if(!strEnd3(lstr)) // if component 'name' was extracted
+            {
+                name = str3_free(name);
+                if(!get_string_expr(stack, lstr, &name)) break;
+                else found=true; // mark that the container name is found
+            }
         }
-        else assert(name!=NULL);
+        else assert(!strEnd3(name)); // name and text cannot be both empty
 
-        if(name)
-        {   Container cont={0}; cont.parent = parent;
-            container = container_find(&cont, name, errormessage, 0,0);
-            if(container && container->parent != parent) { skip=true; container=NULL; }
-        }
-        if(text==NULL) // then name = "file name"
+        if(!strEnd3(name))
         {
-            if(name->wchr!='|') break;  // File name must start with '|'
-            text=name; name=NULL; astrcpy33(&name, text->next); // skip '|'
+            Container cont; memset(&cont,0,sizeof(cont));
+            cont.parent = parent;
+            container = container_find(stack, &cont, name, 0);
+            if(container && container->parent != parent) { skip=true; container=NULL; }
+            // TODO: provide comment of when above if() evaluates to true
+        }
+        if(strEnd3(text)) // if no text then name = "|filename"
+        {
+            if(container) { success=true; break; } // if file was loaded before
 
-            if(container) { success=true; break; }
+            if(sChar(name)!='|') break;  // File name must start with '|'
+            name = sNext(name); // skip the '|'
 
-            Array2 wtext={0};
-            if((wtext = FileOpen2(CST23(name), wtext)).size<=0) break;
-            // do not set error message, use that from container_find()
+            if(VERROR(FileOpen2(C23(name), stack))) break;
 
-            astrcpy32(&text, wtext.data);
-            wchar_free(wtext.data);
+            text = astrcpy32(text, getStr2(stack), C23(name));
 
-            set_line_coln_source(text, 1, 1, CST23(name));
+            if(name.end==NULL) // if name is a mallocated Str3
+            {
+                Str3 s = sPrev(name); // prepare to free '|'
+                name.ptr->prev = NULL;
+                assert(s.ptr->prev==NULL);
+                s.ptr->next = NULL;
+                s = str3_free(s); // do free the '|'
+            }
+            else // else make name mallocated since container is of top-level
+            {
+                Str3 s = name;
+                name = str3_alloc(C37(NULL), strlen3(s));
+                strcpy33(name, s);
+            }
 
-            if(!component_extract (text, innerFunctions, innerContainers, errormessage)) break;
+            if(!component_extract (stack, text, inners)) break;
         }
 
-        if(!found && parent!=RootContainer) { set_message(errormessage, L"Error in \\1 at \\2:\\3:\r\nNon-top level container must have a name.", text); break; }
+        if(!found && parent!=rootContainer) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nNon-top-level container must have a name.", text); break; }
+        found = !strEnd3(type); // mark that the container type is found
 
         if(!container)
         {
-            if(!name) assert(parent != RootContainer); // if assert is true then errormessage above will be executed, since found=true means name!=NULL.
-            else if(checkfail(parent, name)) break;
-            container = component_new(parent, name, false); name=NULL;
+            if(strEnd3(name)) assert(parent != rootContainer);      // assert fails if container is top-level and name==NULL yet text has no 'name' component
+            else if(checkfail(stack, parent, name, found, true)) break;   // ...this will typically happen if this function is called with a name==NULL parameter.
+            container = component_new(parent, name); name=C37(NULL);
         }
-        else if(checkfail(container, NULL)) break;
+        else if(checkfail(stack, container, name, found, false)) break;
         else
         {   container->state = DOPARSE;
-            container->name2 = name; name=NULL;
+            container->name2 = name; name=C37(NULL);
         }
 
-        if(type)
+        if(found) // if container type was extracted
         {
-            if(!get_string_expr(type, &name, errormessage)) break;
+            if(!get_string_expr(stack, type, &name)) break;
             type = name;
 
             bool same = 0==strcmp33(type, container->name2);
             if(!skip) skip = same;
             else if(!same)
-            { set_message(errormessage, L"Error in \\1 at \\2:\\3 on '\\4':\r\nThe type must be the same as the name so to override.", type); break; }
+            { setErrorE(stack, L"Error on '%s' at (%s,%s) in %s:\r\nThe type must be same as the name so to override.", type); break; }
 
-            Container *cont_type = container_find(container, type, 0, skip, 0);
+            Container *cont_type = do_container_find(stack, container, type, skip, 0, 0);
             assert(cont_type != container);
-            if(!cont_type) { set_message(errormessage, L"Error in \\1 at \\2:\\3 on '\\4':\r\nSibling container does not exist.", type); break; }
+            if(!cont_type) // concatenate onto VAL_MESSAGE
+            {
+                argv[0] = L"%s\r\nSo cannot access the sibling container.";
+                argv[1] = getMessage(stack); // get error from calling do_container_find()
+                vpcopy(stack, setMessage(vnext(stack), 0, 2, argv));
+                break;
+            }
 
-            if(c_para(cont_type)!=NULL)
-            { set_message(errormessage, L"Error in \\1 at \\2:\\3 on '\\4':\r\nCannot inherit a sibling that takes parameters.", type); break; }
+            if(*c_para(cont_type))
+            { setErrorE(stack, L"Error on '%s' at (%s,%s) in %s:\r\nCannot inherit a sibling that takes parameters.", type); break; }
 
             else container->type2 = cont_type;
         }
+        else container->type2 = NULL; // else this container does not inherit
 
-        container->rfet2 = text; text=NULL;
         success = true;
         break;
     }
-    if(container) { if(!avl_do(AVL_ADD, &dependence, &container, 0,0,0)) memory_alloc("Dependence"); }
-
+    if(container)
+    {   container->rfet2 = text; text=C37(NULL);
+        dependence_notify(container);
+    }
     // note: this call must always be done so to free innerFunctions and innerContainers
-    if(!component_insert(success?container:NULL, innerFunctions, innerContainers, errormessage)) container=NULL;
+    if(!component_insert(stack, success?container:NULL, inners))
+        container=NULL;
 
-    if(container && parent==RootContainer) container->access2 = ACCESS_PUBLIC;
+    if(container && parent==rootContainer) container->access2 = ACCESS_PUBLIC; // if a top-level container
 
-    lchar_free(name);
-    lchar_free(text);
+    //component_print(" {  ", 1, container);
+    //puts2(L"------------------------------------------------------------\n");
+
+    name = str3_free(name);
+    text = str3_free(text);
     return container;
 }
-
 
 /**************************************************************************************************************/
 
 
-static int avl_component_find (const void* key1, const void* key2, const void* arg)
-{ return strcmp33( (const lchar*)key1, c_name((const Component*)key2) ); }
+static int avl_container_find (const void* key1, const void* key2, const void* arg)
+{ return strcmp33( *(const Str3*)key1, c_name((const Component*)key2) ); }
 
-/* find and return a pointer to a container structure given its pathname */
-Container *container_find (Container* current, const lchar* pathname, wchar* errormessage, bool skipFirst, bool fullAccess)
+static Container *do_container_find (value stack, Container* current, const_Str3 pathname, bool skipFirst, bool fullAccess, bool type1only)
 {
-    if(!RootContainer) RootContainer = component_new(NULL, NULL, false);
-    if(!pathname) return RootContainer;
-    if(!current) current = RootContainer; // if this then pathname must start with '|'
+    if(!rootContainer) rootContainer = component_new(NULL, C37(NULL));
+    if(strEnd3(pathname)) return rootContainer;
+    if(!current) current = rootContainer; // if this then pathname must start with '|'
 
-    lchar* name=NULL;
-    int access = ACCESS_PRIVATE;
+    const_Str2 argv[5];
+    const_Str3 name = {0};
+    unsigned access = ACCESS_PRIVATE;
     bool firsttime = true;
     for( ; ; firsttime=false)
     {
-        if(pathname->wchr==0) break;
-        const lchar* start = pathname;
-        while(pathname->wchr != '|' && pathname->wchr != 0) pathname = pathname->next;
-        astrcpy33S(&name, start, strlen3S(start, pathname));
-        if(pathname->wchr!=0) pathname = pathname->next; // skip the '|'
+        if(strEnd3(pathname)) break;
+        name.ptr = pathname.ptr;
+        while(!strEnd3(pathname) && sChar(pathname) != '|') pathname = sNext(pathname);
+        name.end = pathname.ptr;
+        if(!strEnd3(pathname)) pathname = sNext(pathname); // skip the '|'
 
-             if(name == NULL) { if(firsttime) { current = RootContainer; access = ACCESS_PUBLIC; } continue; }
+             if(strEnd3(name)) { if(firsttime) { current = rootContainer; access = ACCESS_PUBLIC; } continue; }
         else if(0==strcmp31(name, "." )) { continue; }
-        else if(0==strcmp31(name, "..")) { if(!(current = current->parent)) current = RootContainer; continue; }
+        else if(0==strcmp31(name, "..")) { if(!(current = current->parent)) current = rootContainer; continue; }
         else if(firsttime) current = current->parent; // default goes to parent
 
-        if(0==strcmp31(name,"main")) break;
+        if(0==strcmp31(name,"main"))
+        {
+            if(current==rootContainer)
+            { current=NULL; setError(stack, L"Error: root has no main...!"); }
+            break;
+        }
         Container *from = current;
         Container *c=NULL;
         while(true)
@@ -703,40 +866,39 @@ Container *container_find (Container* current, const lchar* pathname, wchar* err
             if(skipFirst) skipFirst=false;
             else
             {
-                c = (Container*) avl_do (AVL_FIND, &current->inners, name, 0, NULL, avl_component_find);
-                if(c!=NULL && c->state != DELETED) // TODO: instead do assert(c->state != DELETED);
+                c = (Container*) avl_do (AVL_FIND, &current->inners, &name, 0, NULL, avl_container_find);
+                if(c!=NULL && c->state != NOFOUND)
                 {
-                    enum ACCESS acc = c_access(c);
-                    if(!fullAccess && acc < access)
+                    enum COMP_ACCESS acc = c_access(c);
+                    if(!fullAccess && acc < access) // TODO: do_container_find(), upon replace-access-type, should maybe search for the replaced component and use its acces-type instead?
                     {
-                        if(errormessage)
-                        {   sprintf1((char*)ErrStr0,
-                                    "Error in \\1 at \\2:\\3 on '\\4':\r\n"
-                                    "component has %s access inside '\\5',\r\n"
-                                    "expected at least %s access.",
-                                    access2str(acc), access2str(access));
-                            set_message(errormessage, CST21((char*)ErrStr0), name, CST23(c_name(current)));
-                        }
+                        argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\n"
+                                   "Component has %s access inside %s.\r\n"
+                                   "Expected at least %s access.";
+                        Str2 msg = (Str2)(stack+1000); // +1000 space reserved for result
+                        argv[1] = msg; msg = 1+strcpy21(msg, access2str(acc)); // 1+ so to skip '\0'
+                        argv[3] = msg; msg = 1+strcpy21(msg, access2str(access));
+                        argv[2] = C23(c_name(current));
+                        setMessageE(stack, 0, 4, argv, name);
                         c=NULL;
                     }
                     break;
                 }
+                else assert(true || !(c!=NULL && c->state != NOFOUND));
             }
             c = current;
-            current = c_type(current);
+            current = type1only ? c->type1 : c_type(current);
             if(current==NULL)
             {
-                if(errormessage)
-                {
-                    strcpy21(ErrStr0, "Error in \\1 at \\2:\\3:\r\nCannot find component '\\4' from \\5.");
-                    const wchar* fr = (from==RootContainer) ? L"|" : CST23(c_name(from));
-                    set_message(errormessage, ErrStr0, name, fr);
-                }
-                c=NULL; break;
+                argv[1] = (from==rootContainer) ? L"|" : C23(c_name(from));
+                argv[0] = TWST(Cannot_Find_Component);
+                setMessageE(stack, 0, 2, argv, name);
+                c=NULL;
+                break;
             }
             const Container *p1 = current->parent, *p2 = c->parent;
             if(p1 == p2) // if have same parent
-            { if(access == ACCESS_PRIVATE) access = ACCESS_ENCLOSED; }
+            { if(access <= ACCESS_PRIVATE) access = ACCESS_ENCLOSED; }
             else if(p1->parent == p2->parent) // if have same grandpa
             { if(access <= ACCESS_ENCLOSED) access = ACCESS_PROTECTED; }
             else access = ACCESS_PUBLIC;
@@ -745,251 +907,243 @@ Container *container_find (Container* current, const lchar* pathname, wchar* err
         if(c==NULL) break;
         if(access < ACCESS_PUBLIC) access++;
     }
-    lchar_free(name);
     return current;
 }
 
 
-/* find and return a pointer to a component structure given its name */
-Component *component_find (Container* current, const lchar* name, wchar* errormessage, bool skipFirst)
+Container *container_find (value stack, Container* current, const_Str3 pathname, bool fullAccess)
+{ return do_container_find (stack, current, pathname, false, fullAccess, false); }
+
+Component *component_find (value stack, Container* current, const_Str3 name, bool skipFirst)
 {
     if(current==NULL) return NULL;
-    if(name==NULL) return NULL;
-    int len = strlen3(name);
-    lchar pathname[MAX_PATH_SIZE];
-    set_lchar_array(pathname, 2+len+1);
-    strcpy33(pathname+2, name);
-    lchar_copy(pathname+0, name); pathname[0].wchr = '.';
-    lchar_copy(pathname+1, name); pathname[1].wchr = '|';
-    return container_find (current, pathname, errormessage, skipFirst, false);
+    if(strEnd3(name)) return NULL;
+    lchar lstr[2];
+    lstr[0].chr = mChar(name);
+    lstr[1].chr = lstr[0].chr;
+    lstr[0].chr.c = '.';
+    lstr[1].chr.c = '|';
+    lstr[0].next = lstr+1;
+    lstr[1].next = name.ptr;
+    const_Str3 pathname = {lstr, name.end};
+    return do_container_find (stack, current, pathname, skipFirst, false, false);
 }
 
 
 /* build and return the full path of given container */
-const wchar* container_path_name (const Container* container)
+Str2 container_path_name (value stack, const Container* container)
 {
-    static wchar path[MAX_PATH_SIZE];
-    if(!container) container = RootContainer;
+    const Container* cont[MAX_LINEAGE+1];
+    if(!container) container = rootContainer;
 
-    List list={0};
-    for( ; container!=RootContainer; container = container->parent)
-        list_head_push(&list, list_new(&container, sizeof(container)));
+    int i;
+    for(i=0; i<=MAX_LINEAGE && container!=rootContainer; container = container->parent)
+        cont[i++] = container;
+    assert(container==rootContainer);
 
-    wchar* mstr = path;
-    void* node = list_head(&list);
-    for( ; node != NULL; node = list_next(node))
-    {
-        container = *(Container**)node;
-        *mstr++ = '|';
-        strcpy23(mstr, c_name(container));
-        mstr += strlen2(mstr);
+    Str2 out = (Str2)(stack+2);
+    if(i==0) *out = 0;
+    while(i--)
+    {   *out++ = '|';
+        out = strcpy23(out, c_name(cont[i]));
     }
-    *mstr=0;
-    list_free(&list);
-    return path;
-}
+    onSetStr2(stack, out);
 
+    stack[1] |= 1; // see bool fullAccess in operations.c
+    return (Str2)(stack+2);
+}
 
 /**************************************************************************************************************/
 
 
-/* parse the string-expression of a component into an expression tree */
-Component *component_parse (Component *component)
+/* parse the expression-string of a component into an operations-array */
+Component* component_parse (value stack, Component *component)
 {
     if(component==NULL) return NULL;
 
     if(component->state == ISPARSE
     || component->state == NOPARSE
-    || component->state == DELETED
-    || component->root2 != NULL) return component;
+    || component->state == NOFOUND
+    || component->oper2 != NULL) return component;
 
-    if(c_access(component)==ACCESS_REPLACE
-    && !component_find(component->parent, c_name(component), errorMessage(), true)) return NULL;
-
-    if(component->name2==NULL)
-    {   astrcpy33(&component->name2, component->name1);
-        astrcpy33(&component->text2, component->text1);
-        avaluecpy(&component->para2, component->para1);
+    Component* comp = do_container_find(stack, component, c_name(component), true, false, false);
+    if(comp){
+        depend_add(component, comp);
+        if(!check_access(stack, c_access(comp), c_access(component), c_name(component))) return NULL;
     }
-    component->root2 = (Expression*)1; // so to deal with recursive call
-    component->root2 = parseExpression(component->text2, component);
+    else if(c_access(component)==ACCESS_REPLACE) return NULL;
 
-    if(component->root2 == NULL) return NULL;
+    //assert(component->depend2.size==0); // must be 0 before parsing (but there is access_replace)
+    component->oper2 = (value)1; // prevent recursive parsing on recursive call
+
+    if(VERROR(parseExpression(stack, c_text(component), component)))
+    { component->oper2 = NULL; return NULL; }
+    assert(stack == vGet(stack));
+
+    long size = vSize(stack);
+    component->oper2 = value_alloc(NULL, size);
+    memcpy(component->oper2, stack, size*sizeof(*stack));
+
     return component;
 }
 
 
+// see expression_to_operation() inside expression.c
+static inline value setOpers (value v, int oper, int size)
+{ *v = (VAL_OPERAT<<28) | (oper<<16) | size; return v+1+size; }
 
-/* evaluate the expression tree of a component */
-bool component_evaluate (ExprCallArg eca, Component *component,
-                         const value* result_vst)  // 'expected' result structure.
+value component_evaluate (value stack,
+                          Container *caller,
+                          Component *component,
+                          const_value argument)
 {
-    if(component==NULL) return false;
-    if(component->state==DELETED) return true;
-    const value* argument = eca.garg->argument;
-    wchar* errormessage = eca.garg->message;
-
-    bool success = false;
-    while(true) // not a loop
-    {
-        const lchar* name = c_name(component);
-        const value* para = c_para(component);
-        Expression * expr = c_root(component);
-        assert(expr!=NULL);
-
-        if(argument && valueSt_compare(para, argument)>3) // if matching is not valid
-        {
-            VstToStr (argument, ErrStr0, 1, -1, -1, -1);
-            VstToStr (para    , ErrStr1, 1, -1, -1, -1);
-            set_message(errormessage, TWST(Parameter_Vst_Is_Invalid), name, ErrStr0, ErrStr1);
-            break;
-        }
-
-        eca.expression = expr;
-        if(!expression_evaluate(eca)) break;
-
-        if(result_vst && valueSt_compare(eca.stack, result_vst)) // if matching is not one-to-one
-        {
-            VstToStr (result_vst, ErrStr0, 1, -1, -1, -1);
-            VstToStr (eca.stack , ErrStr1, 1, -1, -1, -1);
-            set_message(errormessage, TWST(Result_Vst_Is_Invalid), name, ErrStr0, ErrStr1);
-            break;
-        }
-        success = true;
-        break;
+    if(!component)
+    {   stack = vnext(stack);
+        assert(VERROR(stack));
+        return stack;
     }
-    return success;
-}
+    if(component->state==NOFOUND)
+        return setError(stack, L"Error: component->state==NOFOUND.");
+    assert(c_oper(component)!=NULL);
 
+    // see struct OperEval inside expression.h
+    memset(stack, 0, sizeof(OperEval));
+    SetPtr(stack+6, caller);
+
+    // prepare for a custom SET_VAR_FUNC operation
+    value oper = stack + OperEvalSize;
+    value v = oper;
+    const_Str3 name = c_name(component);
+    memcpy(v+1, &name, sizeof(name));
+    memcpy(v+1+4, &component, sizeof(component));
+    v = setOpers(v, SET_VAR_FUNC, 4+2);
+    v = setOpers(v, 0, 0);
+
+    // set argument to the SET_VAR_FUNC operation
+    if(!argument) v = setEmptyVector(v);
+    else v = setAbsRef(v, vGet(argument));
+
+    // relative offset to start of evaluation
+    stack[0] = (v - stack - OperEvalSize)<<16;
+
+    return operations_evaluate(stack, oper);
+}
 
 /**************************************************************************************************************/
 
 
-int evaluation_instance = 0;
-Container* replacement_container = NULL;
-
-
-/* Record a the replacement operator := */
-void replacement_record (Container *c, const Expression *replacement)
+static void replace_text (Str3 from, Str3 to)
 {
-    if(!c || !replacement) return;
-    int i;
-    for(i=0; i < c->replacement_count; i++)
-        if(c->replacement[i] == replacement) return;
+    assert(from.end!=NULL);
+    assert(to.end==NULL);
+    if(strEnd3(from) || strEnd3(to)) return; // empty strings are not allowed
+    to = setEnd(to);
 
-    c->replacement[i] = replacement;
-    c->replacement_count++;
-}
+    lchar* chr = to.end;
+    to.end = chr->prev; // skip char '\0'
+    chr->prev=NULL; str3_free(C37(chr)); // free '\0'
 
+    sChar(from) = sChar(to); // copy 1st char
+    chr = to.ptr; // prepare to free 1st char
+    bool b = to.end!=to.ptr;
+    if(b) to.ptr = chr->next; // skip 1st char
+    chr->next=NULL; str3_free(C37(chr)); // free 1st char
 
-
-/* Commit the replacement as previously recorded */
-void replacement_commit (Container *c)
-{
-    wchar a;
-    int i, j;
-    wchar to[1000];
-    const lchar* name;
-    const Expression *expr;
-    lchar *lstr, *start, *stop;
-
-    if(c==NULL) return;
-    if(!list_find(containers_list, NULL, pointer_compare, &c)) return; // TODO: try again to find the bug for when this line is removed
-    assert(c->rfet1!=NULL);
-    wchar* errormessage = errorMessage();
-
-    for(i=0; i < c->replacement_count; i++)
-    {
-        // Step1: Locate where the replacement operator is
-        name = c->replacement[i]->name;
-        if(name==NULL) { printf("Software Error in replacement_commit(): c->replacement[%d]->name == NULL\n", i); continue; }
-        start = NULL;
-        stop = NULL;
-        for(lstr = c->rfet1; lstr->wchr != 0; lstr = lstr->next)
-            if(lstr->line == name->line && lstr->coln == name->coln) break;
-
-        if(lstr->wchr==0) { set_message(errormessage, L"Software Error in '\\1' at \\2:\\3:\r\nOn '\\4': replacement_commit() is not done.", name); puts2(errormessage); continue; }
-
-        // Step2: Locate where start and stop both are
-        for(j=1; lstr->prev != NULL; lstr = lstr->prev)
-        {
-            a = lstr->prev->wchr;
-            if(isClosedBracket(a)) j++;
-            if(isOpenedBracket(a)) j--;
-
-            if(j<1) break;
-            if(j==1 && (a==*TWSF(Assignment) ||  a==*TWSF(CommaSeparator))) break;
-
-            if(!isSpace(a))
-            {   start = lstr->prev;
-                if(stop==NULL) stop = lstr->prev;
-            }
-        }
-        if(start==NULL || stop==NULL) { set_message(errormessage, L"Software Error in '\\1' at \\2:\\3:\r\nOn '\\4': replacement_commit() start=stop=NULL.", name); puts2(errormessage); continue; }
-
-        // Step3: Get the string to replace with
-        expr = c->replacement[i]->headChild;
-        if(expr==NULL) { printf("Software Error in replacement_commit(): c->replacement[%d]->headChild == NULL\n", i); continue; }
-        VstToStr (&expr->constant, to, 0, -1, -1, -1);
-        lstr=NULL; astrcpy32(&lstr, to);
-
-        if(lstr==NULL || lstr->wchr==0) { set_message(errormessage, L"Software Error in '\\1' at \\2:\\3:\r\nOn '\\4': replacement_commit() has empty lstr.", name); puts2(errormessage); continue; }
-        //printf("replacement_commit():   container = '%s'   start = %d:%d   stop = %d:%d  to = '%s'\n", CST13(c->name), start->line, start->coln, stop->line, stop->coln, CST13(lstr));
-
-        // Step4: Setup the start
-        if(start->prev != NULL) start->prev->next = lstr;
-        if(c->rfet1 == start) c->rfet1 = lstr;
-        lstr->prev = start->prev;
-
-        // Step5: Setup the stop
-        for( ; lstr->next->wchr != 0; lstr = lstr->next);
-        lchar_free (lstr->next); // free the end-of-string character
-
-        stop->next->prev = lstr;
-        lstr->next = stop->next;
-
-        // Step6: Finalise
-        lstr = NULL;
-        start->prev = NULL;
-        stop->next = NULL;
-        lchar_free(start);
+    chr = from.ptr->next; // skip 1st char
+    if(chr != from.end)
+    {   from.end->prev->next = NULL; // prepare to free lchar
+        chr->prev = NULL; str3_free(C37(chr));
     }
-    c->replacement_count=0;
+    from.ptr->next = b ? to.ptr : from.end;
+    if(b) to.ptr->prev = from.ptr;
+
+    from.end->prev = b ? to.end : from.ptr;
+    if(b) to.end->next = from.end;
 }
 
+
+static long _evaluation_instance = 0;
+long evaluation_instance (bool increment)
+{   if(increment) _evaluation_instance++;
+    return _evaluation_instance; }
+
+void replacement_record (const_value repl)
+{
+    Component *c;
+    memcpy(&c, repl+1+4, sizeof(c));
+    c = c_container(c);
+    avl_do(AVL_ADD, &c->replacement, &repl, sizeof(repl), NULL, pointer_compare);
+}
+
+
+long replacement (value stack, Container *c, enum REPL_OPERATION opr)
+{
+    if(c==NULL || c->replacement.size==0) return 0;
+    if(opr==REPL_COUNT) return c->replacement.size;
+    if(opr==REPL_CANCEL) avl_free(&c->replacement);
+    if(opr!=REPL_COMMIT) return 0;
+
+    bool exists = list_find(container_list(), NULL, pointer_compare, &c);
+    assert(exists); if(!exists) return 0;
+
+    void* node = avl_min(&c->replacement);
+    for( ; node != NULL; node = avl_next(node))
+    {
+        const_value repl = *(const_value*)node;
+        assert(repl!=NULL); if(repl==NULL) continue;
+
+        Str3 from;
+        memcpy(&from, repl+1, sizeof(from));
+        assert(!strEnd3(from) && from.end);
+
+        // Locate the left-hand-side to be replaced
+        while(isSpace(from.ptr->chr.c      )) from.ptr = from.ptr->next;
+        while(isSpace(from.end->prev->chr.c)) from.end = from.end->prev;
+        assert(!strEnd3(from)); if(strEnd3(from)) continue;
+
+        // Get the string to replace with
+        repl -= repl[1+4+2+2];
+        stack = VstToStr(setRef(stack, repl), PUT_ESCAPE,-1,-1);
+        Str3 to = astrcpy32(C37(0), getStr2(vGetPrev(stack)), NULL);
+
+        // Finally perform the replacement
+        replace_text(from, to);
+    }
+    avl_free(&c->replacement);
+    return 1;
+}
 
 /**************************************************************************************************************/
 
 
 // main global variables
-static int _stackSize = 0;
-static value* _mainStack = NULL;
-static wchar* _errorMessage = NULL;
+static size_t _stackSize = 0;
+static value _stackArray = 0;
 
-int stackSize() { return _stackSize; }
-value* mainStack() { return _mainStack; }
-wchar* errorMessage() { return _errorMessage; }
+size_t stackSize() { return _stackSize; }
+value stackArray() { return _stackArray; }
 
-void rfet_init (int stack_size)
+void rfet_init (size_t stack_size)
 {
-    if(stack_size < 10000) stack_size = 10000;
+    if(stack_size)
+    {
+        if(stack_size < 10000) stack_size = 10000;
 
-    _stackSize = stack_size;
-    _mainStack = (value*) _realloc (_mainStack, 2*stack_size*sizeof(value));
-    _errorMessage = (wchar*) (_mainStack + stack_size);
-
-    operations_init();
-    SET_VSTXX();
-}
-
-void rfet_clean()
-{
-    // the order below matters
-    component_destroy(RootContainer);
-    RootContainer = NULL;
-    _free(_mainStack);
-    _mainStack=NULL;
-    CST_clean();
-    string_c_clean();
+        void* mem = _realloc (_stackArray, stack_size*sizeof(*_stackArray), "stackArray");
+        if(mem)
+        {   _stackSize = stack_size;
+            _stackArray = (value)mem;
+        }
+        operations_init(stackArray());
+    }
+    else // do rfet_clean()
+    {
+        // note: line below must come first
+        component_destroy(rootContainer);
+        rootContainer = NULL;
+        _free(_stackArray, "stackArray");
+        _stackArray=NULL;
+        string_clean();
+    }
 }
 

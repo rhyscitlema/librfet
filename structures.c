@@ -2,84 +2,10 @@
     structures.c
 */
 
+#include <stdio.h>
 #include <_stdio.h>
 #include <component.h>
 
-/***********************************************************************************************************/
-
-static void expression_destroy (Expression *expression)
-{
-    if(expression==NULL) return;
-    assert(expression->deleted==false);
-    value v = expression->constant;
-    if(isPoiter(v)) value_free(getPoiter(v));
-  //if(isString(v)) lchar_free(getString(v));
-    lchar_free (expression->name);
-    memset(expression, 0, sizeof(Expression));
-    expression->deleted = true; // see assert() above
-    _free(expression);
-    memory_freed("Expression");
-}
-
-void expression_remove (Expression *expression)
-{
-    Expression *expr, *expr_next;
-    if(expression==NULL) return;
-    assert(expression->deleted==false);
-
-    // NOTE: inside set_current(Expression* current_type, ) we have:
-    //  NOTE: using ->headChild makes expression_remove() to crash
-    //  Expression *lhs = expression->lastChild; // left hand side
-
-    // recursively remove children
-    for(expr = expression->headChild; expr != NULL; expr = expr_next)
-    {
-        expr_next = expr->nextSibling;
-        expression_remove(expr);
-    }
-    expression_destroy (expression);
-}
-
-
-static long expression_to_valueSt_2 (Expression *expr, value* vst)
-{
-    long c, len;
-
-    if(expr->headChild==NULL)
-    {
-        len = 1;
-        *vst = setString(expr->name);
-        expr->name = NULL; // or do strcpy:
-        //lstr=NULL;
-        //if(expr->name!=NULL)
-        //    astrcpy33(&lstr, expr->name);
-        //*vst = setString(lstr);
-    }
-    else
-    {   len = 1;
-        for(c=0, expr = expr->headChild; expr != NULL; expr = expr->nextSibling, c++)
-            len += expression_to_valueSt_2 (expr, vst+len);
-        *vst = setSepto2(len, c);
-    }
-    return len;
-}
-
-value* expression_to_valueSt (Expression *expression)
-{
-    if(expression==NULL) return NULL;
-    //expression_tree_print(expression); // in expresion.h
-
-    value* vst = (value*)errorMessage();
-    long len = expression_to_valueSt_2 (expression, vst);
-
-    value* out = value_alloc (len);
-    memcpy(out, vst, len*sizeof(value));
-
-    //printf("expression_to_valueSt = '%s'\n", vst_to_str(vst));
-    return out;
-}
-
-/***********************************************************************************************************/
 
 static void inherits_clear (AVLT* tree)
 {
@@ -92,43 +18,7 @@ static void inherits_clear (AVLT* tree)
     avl_free(tree);
 }
 
-void component_destroy (Component *component)
-{
-    if(component==NULL) return;
-    memory_freed("Component");
-
-    component_remove (&component->inners);
-    inherits_clear (&component->inherits);
-
-    depend_denotify (&component->depend1, component);
-    list_free (&component->depend1);
-    list_free (&component->depend2);
-    list_free (&component->depOnMe);
-    lchar_free (component->rfet1);
-    lchar_free (component->rfet2);
-    lchar_free (component->name1);
-    lchar_free (component->name2);
-    lchar_free (component->text1);
-    lchar_free (component->text2);
-    value_free (component->para1);
-    value_free (component->para2);
-    value_free (component->result1);
-    value_free (component->result2);
-    expression_remove (component->root1);
-    expression_remove (component->root2);
-
-    if(component->name1 && !component->isaf1)
-    {   void* node = list_find(containers_list, NULL, pointer_compare, &component);
-        assert(node!=NULL);
-        list_delete(containers_list, node);
-    }
-    if(component->owner) *(Container**)component->owner = NULL;
-    if(component->type1) avl_do(AVL_DEL, &component->type1->inherits, &component, 0,0,0);
-    if(!component->name1 && !component->name2) avl_delete(NULL, component); // must come before
-    if(component->parent) avl_delete(&component->parent->inners, component); // must be very last
-}
-
-void component_remove (AVLT* tree)
+static void component_remove (AVLT* tree)
 {
     Component *c = (Component*)avl_min(tree);
     for( ; c != NULL; c = (Component*)avl_next(c))
@@ -139,58 +29,103 @@ void component_remove (AVLT* tree)
     avl_free(tree);
 }
 
+void component_destroy (Component *component)
+{
+    if(component==NULL) return;
+    memory_freed("Component");
+
+    component_remove (&component->inners);
+    inherits_clear (&component->inherits);
+
+    void* node = avl_min(&component->depOnMe);
+    for( ; node != NULL; node = avl_next(node))
+    {
+        Component* c = *(Component**)node;
+        avl_do(AVL_DEL, &c->depend1, &component, 0, 0, pointer_compare);
+    }
+    depend_denotify (&component->depend1, component);
+
+    avl_free (&component->depend1);
+    avl_free (&component->depend2);
+    avl_free (&component->depOnMe);
+    avl_free (&component->replacement);
+
+    if(component->rfet1.ptr) // if component is a container
+    {
+        void* node = list_find(container_list(), NULL, pointer_compare, &component);
+        assert(node!=NULL); list_delete(container_list(), node);
+    }
+    str3_free (component->name1);
+    str3_free (component->name2);
+    str3_free (component->text1);
+    str3_free (component->text2);
+    str3_free (component->rfet1);
+    str3_free (component->rfet2);
+    value_free(component->oper1);
+    value_free(component->oper2);
+
+    // see operations_evaluate() inside operations.c
+    if(component->constant != 1+component->para1)
+        value_free(component->constant);
+
+    Container** owner = (Container**)component->owner;
+    if(owner && *owner==component) *owner = NULL; // NOTE: do not assert anything
+
+    if(component->type1) avl_do(AVL_DEL, &component->type1->inherits, &component, 0,0,0);
+    if(component->parent) avl_delete(&component->parent->inners, component);
+    // NOTE: last line above must really be last; also see component_remove().
+}
+
 /***********************************************************************************************************/
 
 static void getindent (char* str, const char* text, int indent)
 {
-    char *s = str;
-    int i;
+    int i, j;
     if(indent<0) indent=1;
-    for(*s=0, i=0; i<indent; i++)
-    { strcpy11(s, text); s += strlen1(s); }
+    for(i=0; i<indent; i++)
+        for(j=0; text[j]; j++)
+            *str++ = text[j];
+    *str=0;
 }
 
-void inherits_obtain (Component *component, List* list, wchar* mstr, const char* text, int indent)
+Str2 inherits_obtain (Component *component, List* list, Str2 out, const char* text, int indent)
 {
     char str[1000];
     assert(component!=NULL);
     if(list) list_tail_push(list, list_new(&component, sizeof(component)));
-    if(mstr)
-    {
-        getindent(str, text, indent);
-        mstr = strcpy21(mstr, str);
-        mstr = strcpy23(mstr, c_name(component));
-        mstr = strcpy21(mstr, "\r\n");
-    }
+
+    getindent(str, text, indent);
+    out = strcpy21(out, str);
+    out = strcpy23(out, c_name(component));
+    out = strcpy21(out, "\r\n");
+
     if(indent>=-1)
     {
         if(indent<0) indent--; else indent++;
         void* node = avl_min(&component->inherits);
         for( ; node != NULL; node = avl_next(node))
-        {
-            inherits_obtain(*(Component**)node, list, mstr, text, indent);
-            if(mstr) mstr += strlen2(mstr);
-        }
+            out = inherits_obtain(*(Component**)node, list, out, text, indent);
     }
+    return out;
 }
 
 bool inherits_remove (Component *component)
 {
-    //if(!component) return true;
     assert(component!=NULL);
+    if(component==NULL) return true;
     List list={0};
 
-    wchar* message = errorMessage();
-    wchar* mstr = message;
-    sprintf2(mstr, L"On removal of container:\r\n");
+    wchar message[10000];
+    Str2 str = message;
+    str = strcpy21(str, "On removal of container:\r\n");
 
-    mstr += strlen2(mstr);
-    inherits_obtain(component, &list, mstr, "* ", 1);
+    str = inherits_obtain(component, &list, str, "* ", 1);
 
-    mstr += strlen2(mstr);
-    strcpy21(mstr, "All will be removed.\r\n");
+    str = strcpy21(str, "All will be removed.\r\n");
 
-    bool remove = (list.size==1 || wait_for_confirmation (L"Confirm removal", message));
+    bool remove = list.size==1 ||
+                  wait_for_confirmation(
+                    L"Confirm removal", message);
     if(remove)
     {   void* node = list_tail(&list);
         for( ; node!=NULL; node = list_prev(node))
@@ -202,99 +137,87 @@ bool inherits_remove (Component *component)
 
 /***********************************************************************************************************/
 
-static bool depend_check (List depend)
-{   void* node = list_head(&depend);
-    for( ; node!=NULL; node = list_next(node))
-        if(*(Component**)node==NULL) return 0;
-    return 1;
-}
-
-static inline const char* state2str (enum STATE state)
+static inline const char* state2str (enum COMP_STATE state)
 {
     switch(state){
         case ISPARSE: return "ISPARSE";
         case DOPARSE: return "DOPARSE";
         case NOPARSE: return "NOPARSE";
-        case DELETED: return "DELETED";
+        case ISFOUND: return "ISFOUND";
+        case DOFOUND: return "DOFOUND";
+        case NOFOUND: return "NOFOUND";
         case CREATED: return "CREATED";
-        default: return "NULL";
+        default: return "NULL_STATE";
     }
 }
 
 
-void expression_print (const char* text, int indent, const Expression *expr)
+static void do_print (const char* text, const char* name, const_Str3 str)
 {
-    if(!expr) return;
-    char str[1000];
-    getindent(str, text, indent);
-    printf("\n");
-    printf("%s expression      = %p\n"   , str, (void*)expr);
-    printf("%s exr->name       = '%s'\n" , str, CST13(expr->name));
-    printf("%s exr->line:coln  = %d:%d\n", str, expr->name->line, expr->name->coln);
-    printf("%s exr->ID         = %d\n"   , str, expr->ID);
-    printf("%s exr->type       = 0x%x\n" , str, expr->type);
-    printf("%s exr->previous   = 0x%x\n" , str, expr->previous);
-    printf("%s exr->precedence = %d\n"   , str, expr->precedence);
-    printf("%s exr->constant   = '%s'\n" , str, vst_to_str(&expr->constant));
-    printf("\n\n");
+    if(strEnd3(str)) return;
+    int line = sLine(str);
+    int coln = sColn(str);
+    printf("%s component->%s     = '%s' %d:%d %s\n",
+           text, name, C13(str), line, coln, (str.end?"":"!str.end"));
 }
-
 
 void component_print (const char* text, int indent, const Component *component)
 {
     if(component==NULL) return;
     char str[1000];
     getindent(str, text, indent);
-    int line, coln;
 
         printf("%s component            = %p\n", str, (void*)component);
 
     if(component->type1)
-        printf("%s component->type1     = '%s'\n", str, component->type1 ? CST13(c_name(component->type1)) : "NULL");
+        printf("%s component->type1     = '%s'\n", str, component->type1 ? C13(c_name(component->type1)) : "NULL");
     if(component->type2)
-        printf("%s component->type2     = '%s'\n", str, component->type2 ? CST13(c_name(component->type2)) : "NULL");
+        printf("%s component->type2     = '%s'\n", str, component->type2 ? C13(c_name(component->type2)) : "NULL");
 
-    if(component->name1) { line = component->name1->line; coln = component->name1->coln;
-        printf("%s component->name1     = '%s' %d:%d\n", str, CST13(component->name1), line, coln); }
+    do_print(str, "name1", component->name1);
+    do_print(str, "name2", component->name2);
+    do_print(str, "text1", component->text1);
+    do_print(str, "text2", component->text2);
 
-    if(component->name2) { line = component->name2->line; coln = component->name2->coln;
-        printf("%s component->name2     = '%s' %d:%d\n", str, CST13(component->name2), line, coln); }
+    if(component->rfet1.ptr)
+        printf("%s component->rfet1     = true, end=%d\n", str, component->rfet1.end!=NULL);
+    if(component->rfet2.ptr)
+        printf("%s component->rfet2     = true, end=%d\n", str, component->rfet2.end!=NULL);
 
-    if(component->text1) { line = component->text1->line; coln = component->text1->coln;
-        printf("%s component->text1     = '%s' %d:%d\n", str, CST13(component->text1), line, coln); }
+    if(*component->para1)
+        printf("%s component->para1     = true\n", str);
+    if(*component->para2)
+       {printf("%s component->para2     = true\n", str);}
 
-    if(component->text2) { line = component->text2->line; coln = component->text2->coln;
-        printf("%s component->text2     = '%s' %d:%d\n", str, CST13(component->text2), line, coln); }
-
-    if(component->para1)
-        printf("%s component->para1     = %p\n", str, (void*)component->para1);
-    if(component->para2)
-       {printf("%s component->para2     = %p\n", str, (void*)component->para2);}
-
-        printf("%s component->isaf      = %s\n", str, c_isaf(component) ? "true" : "false");
         printf("%s component->access    = %s\n", str, access2str(c_access(component)));
         printf("%s component->state     = %s\n", str, state2str(component->state));
         printf("%s component->parent    = %p\n", str, (void*)component->parent);
 
+    if(component->oper1)
+        printf("%s component->oper1     = %p\n", str, (void*)component->oper1);
+    if(component->oper2)
+        printf("%s component->oper2     = %p\n", str, (void*)component->oper2);
+
+    if(component->replace)
+        printf("%s component->replace   = %d\n", str, component->replace);
+
     if(component->depOnMe.size)
-        printf("%s component->depOnMe   = %ld  check=%d\n", str, component->depOnMe.size, depend_check(component->depOnMe));
+        printf("%s component->depOnMe   = %ld\n", str, component->depOnMe.size);
 
     if(component->depend1.size)
-        printf("%s component->depend1   = %ld  check=%d\n", str, component->depend1.size, depend_check(component->depend1));
+        printf("%s component->depend1   = %ld\n", str, component->depend1.size);
 
     if(component->depend2.size)
-        printf("%s component->depend2   = %ld  check=%d\n", str, component->depend2.size, depend_check(component->depend2));
+        printf("%s component->depend2   = %ld\n", str, component->depend2.size);
 
-    if(component->root1)
-        printf("%s component->root1     = %p\n", str, (void*)component->root1);
-    if(component->root2)
-        printf("%s component->root2     = %p\n", str, (void*)component->root2);
+    if(component->replacement.size)
+        printf("%s component->replacement = %ld\n", str, component->replacement.size);
 
     if(component->inherits.size)
-        printf("%s component->inherits.size = %d\n", str, component->inherits.size);
+        printf("%s component->inherits  = %ld\n", str, component->inherits.size);
 
     if(component->inners.size)
-        printf("%s component->inners.size = %d\n", str, component->inners.size);
+        printf("%s component->inners    = %ld\n", str, component->inners.size);
 
     printf("\n");
 
@@ -305,5 +228,145 @@ void component_print (const char* text, int indent, const Component *component)
         for( ; c != NULL; c = avl_next(c))
             component_print(text, indent, (Component*)c);
     }
+}
+
+/***********************************************************************************************************/
+
+
+bool CheckStr3 (const_Str3 str)
+{
+  bool success = false;
+  while(true) // not a loop
+  {
+    if(strEnd3(str)) { success=true; break; }
+    if(str.ptr==NULL && str.end!=NULL) {assert(false); break;}
+
+    lchar* lchr = str.ptr->prev;
+    if(lchr && lchr->next != str.ptr) {assert(false); break;}
+
+    while(true)
+    {   lchr = str.ptr->next;
+        if(lchr && lchr->prev != str.ptr) {assert(false && "Str3 pointers are invalid"); break;}
+        if(strEnd3(str)) { success = true; break; }
+        else if(lchr==NULL) {assert(false && "mallocated string does not end with '\0'."); break;}
+        str.ptr = lchr;
+    }
+    break;
+  }
+  return success;
+}
+
+
+static bool CheckAVLT (const AVLT tree)
+{
+  bool success = avl_valid(&tree);
+  assert(success && "CheckAVLT() has failed failed");
+  return success;
+}
+
+
+static bool CheckPara (const_value vst)
+{
+  bool success = false;
+  while(true) // not a loop
+  {
+    if(!vst) { success=true; break; }
+
+    success = true;
+    break;
+  }
+  return success;
+}
+
+
+static bool CheckOper (const_value opr)
+{
+  bool success = false;
+  while(true) // not a loop
+  {
+    if(!opr) { success=true; break; }
+
+    success = true;
+    break;
+  }
+  return success;
+}
+
+
+bool CheckComponent (Component* component, bool finalised)
+{
+  bool success = false;
+  while(true) // not a loop
+  {
+    if(!component) { success=true; break; }
+    if(finalised)
+    {   if(component->name2.ptr) {assert(false); break;}
+        if(component->text2.ptr) {assert(false); break;}
+        if(component->rfet2.ptr) {assert(false); break;}
+      //if(component->para2[0]) {assert(false); break;} // do not include this due to a constant-type
+        if(component->oper2) {assert(false); break;}
+        if(component->depend2.size) {assert(false); break;}
+    }
+    if(!CheckStr3(component->name1)) break;
+    if(!CheckStr3(component->name2)) break;
+    if(!CheckStr3(component->text1)) break;
+    if(!CheckStr3(component->text2)) break;
+    if(!CheckStr3(component->rfet1)) break;
+    if(!CheckStr3(component->rfet2)) break;
+    if(!CheckPara(component->para1)) break;
+    if(!CheckPara(component->para2)) break;
+    if(!CheckOper(component->oper1)) break;
+    if(!CheckOper(component->oper2)) break;
+    if(!CheckAVLT(component->depend1)) break;
+    if(!CheckAVLT(component->depend2)) break;
+    if(!CheckAVLT(component->depOnMe)) break;
+    if(!CheckAVLT(component->inherits)) break;
+    if(!CheckAVLT(component->replacement)) break;
+    if(!CheckAVLT(component->inners)) break;
+
+    void* node;
+
+    if(component->rfet1.ptr
+    && !list_find(container_list(), NULL, pointer_compare, &component)) {assert(false); break;}
+
+    node = avl_min(&component->inherits);
+    for( ; node != NULL; node = avl_next(node))
+    {   Component* c = *(Component**)node;
+        if(c->type1 != component) {assert(c->type1 == component); break;}
+    }
+
+    node = avl_min(&component->depOnMe);
+    for( ; node != NULL; node = avl_next(node))
+    {   Component* c = *(Component**)node;
+        if(!avl_do(AVL_FIND, &c->depend1, &component, 0, 0, pointer_compare)
+      /*&& !avl_do(AVL_FIND, &c->depend2, &component, 0, 0, pointer_compare)*/)
+            {assert(false && "error on AVL_FIND  c->dependX  &component"); break;}
+    }
+
+    node = avl_min(&component->depend1);
+    for( ; node != NULL; node = avl_next(node))
+    {   Component* c = *(Component**)node;
+        if(!avl_do(AVL_FIND, &c->depOnMe, &component, 0, 0, pointer_compare))
+            {assert(false && "error on AVL_FIND  c->depOnMe  &component"); break;}
+    }
+
+    if(component->type1
+    && !avl_do(AVL_FIND, &component->type1->inherits, &component, 0,0,0)) {assert(false); break;}
+
+    if(component->parent
+    && !avl_do(AVL_FIND, &component->parent->inners, component, 0,0,0)) {assert(false); break;}
+
+    node = avl_min(&component->inners);
+    for( ; node != NULL; node = avl_next(node))
+    {   Component* c = (Component*)node;
+        if(c->parent != component) {
+            assert(c->parent == component); break; }
+        if(!CheckComponent(c, finalised)) {assert(false); break;} // recursive call
+    }
+
+    success = true;
+    break;
+  }
+  return success;
 }
 

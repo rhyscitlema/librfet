@@ -11,7 +11,6 @@
 
 #include <outsider.h>
 
-
 bool user_input_allowed = false;
 
 
@@ -23,41 +22,39 @@ enum OUTSIDER_ID
 };
 
 
-
 /* Get Outsider ID */
-#define GOID(string, ID) if(0==strcmp31(lstr, string)) return ID;
+#define GOID(string, ID) if(0==strcmp31(str, string)) return ID;
 
 
-/* Return outsider's ID > 0, else return 0. */
-unsigned int outsider_getID (const lchar* lstr)
+/* Return outsider's ID != 0, else return 0 */
+int outsider_getID (const_Str3 str)
 {
-    GOID ("time", TIME)
+    GOID("time", TIME)
     return NONE;
 }
 
 
 /* Evaluate outsider expression */
-bool set_outsider (ExprCallArg eca)
+value set_outsider (value stack, int ID)
 {
-    int rows=1, cols=1;
-
-    int id = GET_OUTSIDER_ID(eca.expression);
-    switch(id)
+    switch(ID)
     {
     case TIME:
-        eca.stack[0] = setSmaInt(0);
+        stack = setSmaInt(stack, 0);
         break;
 
-    default:
-        set_message (eca.garg->message, L"Software Error: in \\1 at \\2:\\3:\r\nOn '\\4': outsider \\5 is unrecognised.", eca.expression->name, TIS2(0,id));
-        return 0;
+    default:{
+        const_Str2 argv[2];
+        argv[0] = L"Software outsider ID = %s is unrecognised.";
+        argv[1] = TIS2(0,ID);
+        stack = setMessage(stack, 0, 2, argv);
+        }break;
     }
-
-    valueSt_matrix_setSize (eca.stack, rows, cols);
-    return 1;
+    return stack;
 }
 
 
-/* Called by component_parse() */
-bool checkfail (const Container* c, const lchar* name) { return false; }
+/* Called by container_parse() in component.c */
+bool checkfail (value stack, const Container* c, const_Str3 name, bool hasType, bool isNew)
+{ return (stack || c || name.ptr || hasType || isNew) ? false : false; }
 

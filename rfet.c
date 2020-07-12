@@ -2,105 +2,88 @@
     rfet.c
 */
 
-#include <rfet.h>
-#include <expression.h>
-#include <component.h>
-#include <_texts.h>
-#include <_stdio.h>
+#include "rfet.h"
+#include "component.h"
 
-/******************************************************************************/
 
-const value* rfet_parse_and_evaluate (
-    const wchar* rfet_string,
-    const wchar* source_name,
-    const value* result_vst)
+value rfet_parse_and_evaluate (
+    value stack,
+    const_Str2 rfet_string,
+    const_Str2 source_name,
+    const_value argument)
 {
-    wchar source[10];
-    strcpy21(source, "input");
-    if(!source_name) source_name = source;
+    if(strEnd2(source_name)) source_name = L"input";
+    Str3 text = astrcpy32(C37(NULL), rfet_string, source_name);
 
-    lchar* text=NULL; astrcpy32(&text, rfet_string);
-    set_line_coln_source(text, 1, 1, source_name);
+    RFET rfet = rfet_parse(stack, NULL, text); text=C37(NULL);
+    stack = rfet_evaluate(stack, rfet, argument);
 
-    RFET rfet = rfet_parse(NULL, text); text=NULL;
-    bool success = rfet_evaluate(rfet, NULL, result_vst);
-
-    rfet_remove(rfet);
-    return success ? mainStack() : NULL;
+    if(!rfet) assert(VERROR(stack));
+    rfet_remove(stack, rfet);
+    return stack;
 }
 
 
-/* check for container and return true if it exists */
-static bool container_check (const Container* container)
+/* check if container exists and return true if it does */
+static bool container_check (value stack, const Container* container)
 {
     if(!container) return false;
-    if(list_find(containers_list, NULL, pointer_compare, &container)) return true;
-    sprintf2(errorMessage(), L"RFET Error: container cannot be found.\r\n");
+    if(list_find(container_list(), NULL, pointer_compare, &container)) return true;
+    setError(stack, L"RFET Error: container cannot be found.");
+    assert(!"container_check() failed.");
     return false;
 }
 
-/******************************************************************************/
 
-RFET rfet_parse (RFET rfet, lchar* text)
+RFET rfet_parse (value stack, RFET rfet, Str3 text)
 {
-    if(rfet && !container_check((Container*)rfet)) return false;
+    if(rfet && !container_check(stack, (Container*)rfet))
+    { text = str3_free(text); return NULL; }
 
-    if(isEmpty3(text,0))
-    {   strcpy21(errorMessage(), "Empty input.");
-        lchar_free(text);
-        return NULL;
+    if(strEmpty3(text,0))
+    {   stack = setError(stack, L"Empty input.");
+        text = str3_free(text); return NULL;
     }
-    lchar* name=NULL;
-    astrcpy32(&name, lchar_get_source(*text));
+    assert(text.end==NULL); // assert is a mallocated Str3
+    Str3 name = astrcpy32(C37(NULL), lchar_get_source(text), NULL);
 
     Container* parent = rfet ? ((Container*)rfet)->parent : NULL;
-    Container* container = container_parse(parent, name, text); text=NULL;
-    if(container && !dependence_parse()) container=NULL;
+    Container* container = container_parse(stack, parent, name, text);
+    name=C37(NULL); text=C37(NULL);
+
+    if(container && !dependence_parse(stack)) container=NULL;
     dependence_finalise(container!=NULL);
 
     return container;
 }
 
 
-bool rfet_evaluate (RFET rfet, const value* argument, const value* result_vst)
+value rfet_evaluate (value stack, RFET rfet, const_value argument)
 {
     Container *container = (Container*)rfet;
-    if(!container_check(container)) return false;
-
-    GeneralArg garg = {
-        .caller = (Container*)rfet,
-        .message = errorMessage(),
-        .argument = argument
-    };
-    ExprCallArg eca = {
-        .garg = &garg,
-        .expression = NULL,
-        .stack = mainStack()
-    };
-    evaluation_instance++;
-    replacement_container = container;
-    return component_evaluate(eca, (Component*)rfet, result_vst);
+    if(!container_check(stack, container)) return vnext(stack);
+    evaluation_instance(true);
+    return component_evaluate (stack, container, container, argument);
 }
 
-
-bool rfet_commit_replacement (RFET rfet)
+bool rfet_commit_replacement (value stack, RFET rfet)
 {
     Container *container = (Container*)rfet;
-    if(!container_check(container)) return false;
-    if(container->replacement_count==0) return false;
-    replacement_commit(container);
-    return true;
+    if(!container_check(stack, container)) return false;
+    return replacement(stack, container, REPL_COMMIT);
 }
 
-
-const wchar* rfet_get_container_text (RFET rfet)
+value rfet_get_container_text (value stack, RFET rfet)
 {
     Container *container = (Container*)rfet;
-    if(!container_check(container)) return NULL;
-    return CST23(c_rfet(container));
+    if(!container_check(stack, container)) return vnext(stack);
+    return setStr23(stack, c_rfet(container));
 }
 
-
-void rfet_remove (RFET rfet)
-{ if(rfet) inherits_remove((Container*)rfet); }
+bool rfet_remove (value stack, RFET rfet)
+{
+    Container *container = (Container*)rfet;
+    if(!container_check(stack, container)) return false;
+    return inherits_remove((Container*)rfet);
+}
 

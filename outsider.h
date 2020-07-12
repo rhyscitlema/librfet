@@ -9,19 +9,21 @@
 #include <structures.h>
 
 #define OUTSIDER_ISA_FUNCTION 0x10000000
-#define GET_OUTSIDER_ID(expression) (expression)->param[0]
-#define SET_OUTSIDER_ID(expression,ID) (expression)->param[0]=ID;
 
 extern bool user_input_allowed;
 
-/* Return outsider's ID > 0, else return 0 */
-unsigned int outsider_getID (const lchar* lstr);
+/* Return outsider's ID != 0, else return 0 */
+int outsider_getID (const_Str3 str);
 
 /* Evaluate outsider expression */
-bool set_outsider (ExprCallArg eca);
+value set_outsider (value stack, int ID);
 
-/* Called by component_parse() */
-bool checkfail (const Container* c, const lchar* name);
+
+/* Called by container_parse() in component.c.
+   If name!=NULL then c = parent container.
+   See librodt/tools.c
+*/
+bool checkfail (value stack, const Container* c, const_Str3 name, bool hasType, bool isNew);
 
 #endif
 

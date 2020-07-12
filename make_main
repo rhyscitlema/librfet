@@ -23,6 +23,7 @@ CC_FLAGS = -I$(LIBALGO) \
            -I$(LIB_STD) \
            -I$(LIBRFET) \
            -Wall \
+           -std=c99 \
            -pedantic \
            $(CFLAGS)
 
@@ -53,7 +54,7 @@ clean:
 	cd $(LIBALGO) && $(MAKE) clean
 	cd $(LIB_STD) && $(MAKE) clean
 	cd $(LIBRFET) && $(MAKE) clean
-	$(RM) $(OUTPUT_FILE)
+	$(RM) $(OUTPUT_FILE) $(OUTPUT_FILE).exe
 
 #-------------------------------------------------
 

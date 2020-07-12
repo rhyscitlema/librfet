@@ -11,50 +11,58 @@
    expression.c and component.c only.
 */
 const Expression* get_next_item (
-                const lchar** strExpr,
-                lchar** str,
+                value stack,
+                const_Str3* strExpr,
+                const_Str3* str,
                 const Expression *currentItem,
                 Component *component);
 
 
-/* The function name below is perhaps the only VETERAN
-   to the whole calculator software source code. Essentially,
-   it has been there ever since the very first implementation,
-   and has survived all the countless source code revisions!
-   When will it finally go down... I wonder...?!!
-   This all started with the discovery of a new parsing algorithm:
+/* The function 'name' below is perhaps the only veteran
+   to the whole calculator software source code. It has
+   been there ever since the very first implementation,
+   and has survived all the countless code revisions.
+   When will it finally go down? I wonder!
+   It all started with the discovery of a new parsing algorithm:
    http://rhyscitlema.com/algorithms/expression-parsing-algorithm
 */
-Expression *parseExpression (const lchar* strExpr, Component *component);
-
-void expression_tree_print (const Expression *expression);
+value parseExpression (value stack, const_Str3 strExpr, Component *component);
 
 
-/* Called only at the end of a successfull evaluation.
-   Placed here only so to be available to outsider.c.
+typedef struct _OperEval { // NOTE: never change this.
+    uint8_t  params; // number of parameters to function call
+    uint8_t  input;  // user input ID used for outsider calls
+    uint16_t recurs; // number of recursive calls (union with:
+  //uint16_t start;  // relative offset to start of evaluation)
+    uint32_t result; // -ve offset to final location of result
+    uint32_t stack;  // -ve offset to previous stack pointer
+    uint32_t p_try;  // -ve offset to previous 'try' pointer
+    uint64_t opers;  // pointer to previous opers array
+    uint64_t caller; // pointer to initial caller container
+} OperEval; // see component_evaluate() in component.c
+#define OperEvalSize (sizeof(OperEval)/sizeof(uint32_t))
+
+
+/* Note: the caller must pre-set the required data structure
+   relative to the given <stack> pointer parameter. Refer to
+   the SET_VAR_FUNC part of the function's implementation to
+   see what exactly the required data structure is. A usual
+   thing to do is just: memset(stack, 0, sizeof(OperEval));
 */
-void INDEPENDENT (Expression* expression, value* stack, int independent);
+value operations_evaluate (value stack, const_value oper);
 
 
-static inline bool check_first_level (const value* in, int Cols, wchar* errormessage, const lchar* name)
+static inline void* GetPtr (const_value v)
 {
-    value v;
-    int cols;
-
-    if(!in) return 0;
-    v = *in;
-    cols = getType(v)==aSeptor ? getSeptor(v).cols : 1;
-
-    if(cols!=Cols)
-    {
-        set_message( errormessage,
-            L"Error in \\1 at \\2:\\3 on '\\4':\r\nExpect \\5 arguments but \\6 found.",
-            name, TIS2(0,Cols), TIS2(1,cols));
-        return 0;
-    }
-    else return 1;
+    uint64_t p = v[0];
+    return (void*)(intptr_t)( (p<<32) | v[1] );
 }
 
+static inline void SetPtr (value v, const void* ptr)
+{
+    uint64_t p = (intptr_t)ptr;
+    v[1] = (uint32_t)p;
+    v[0] = (uint32_t)(p >> 32);
+}
 
 #endif
-

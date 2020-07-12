@@ -5,10 +5,10 @@
 OUTPUT_FILE = librfet.a
 
 OBJECT_FILES = rfet.o \
-               component.o \
-               expression.o \
+               operations.o \
                structures.o \
-               operations.o
+               expression.o \
+               component.o
 
 LIBALGO = ../algorithms
 LIB_STD = ../lib_std
@@ -27,6 +27,7 @@ CC_FLAGS = -I$(LIBALGO) \
            -I$(LIB_STD) \
            -I$(LIBRFET) \
            -Wall \
+           -std=c99 \
            -pedantic \
            $(CFLAGS)
 
@@ -48,7 +49,7 @@ clean:
 
 INCLUDE_FILES = $(LIBALGO)/*.h \
                 $(LIB_STD)/*.h \
-                $(LIBRFET)/*.h *.c
+                $(LIBRFET)/*.h
 
 # compile .c files to .o files
 %.o: %.c $(INCLUDE_FILES)
