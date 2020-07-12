@@ -1,7 +1,7 @@
 #ifndef _COMPONENT_H
 #define _COMPONENT_H
 /*
-    component.h
+	component.h
 */
 
 #include "structures.h"
@@ -32,10 +32,11 @@ bool isSpecial3 (const_Str3 name);
 Component* component_parse (value stack, Component *component);
 
 /* evaluate the operations-array of given component */
-value component_evaluate (value stack,
-                          Container *caller,
-                          Component *component,
-                          const_value argument);
+value component_evaluate (
+	value stack,
+	Container *caller,
+	Component *component,
+	const_value argument );
 
 
 /* read: I <component> am depending on <depending> */
@@ -54,11 +55,11 @@ long evaluation_instance (bool increment);
 /* Record the replacement operator upon a LHS change */
 void replacement_record (const_value repl);
 
-enum REPL_OPERATION
-{   REPL_CANCEL,    // Cancel the replacement recorded
-    REPL_COMMIT,    // Commit the replacement recorded
-    REPL_COUNT,     // Count the replacement recorded
-    // note: <stack> only needed if on REPL_COMMIT
+enum REPL_OPERATION {
+	REPL_CANCEL,    // Cancel the replacement recorded
+	REPL_COMMIT,    // Commit the replacement recorded
+	REPL_COUNT,     // Count the replacement recorded
+	// note: <stack> only needed if on REPL_COMMIT
 };
 long replacement (value stack, Container *c, enum REPL_OPERATION opr);
 

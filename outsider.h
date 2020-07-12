@@ -1,9 +1,9 @@
 #ifndef _OUTSIDER_H
 #define _OUTSIDER_H
 /*
-    outsider.h
+	outsider.h
 
-    See outsider_default.c
+	See outsider_default.c
 */
 
 #include <structures.h>
@@ -20,8 +20,8 @@ value set_outsider (value stack, int ID);
 
 
 /* Called by container_parse() in component.c.
-   If name!=NULL then c = parent container.
-   See librodt/tools.c
+*  If name!=NULL then c = parent container.
+*  See librodt/tools.c
 */
 bool checkfail (value stack, const Container* c, const_Str3 name, bool hasType, bool isNew);
 

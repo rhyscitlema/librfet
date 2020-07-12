@@ -1,7 +1,7 @@
 #ifndef _STRUCTURES_H
 #define _STRUCTURES_H
 /*
-    structures.h
+	structures.h
 */
 
 #include <_math.h>
@@ -20,83 +20,83 @@ void rfet_init (size_t stack_size);
 
 typedef struct _Expression
 {
-    // used for expression tree structure
-    struct _Expression *parent;
-    struct _Expression *headChild;
-    struct _Expression *lastChild;
-    struct _Expression *nextSibling;
-    struct _Expression *prevSibling;
+	// used for expression tree structure
+	struct _Expression *parent;
+	struct _Expression *headChild;
+	struct _Expression *lastChild;
+	struct _Expression *nextSibling;
+	struct _Expression *prevSibling;
 
-    // name of expression (name of operator or component or string)
-    const_Str3 name;
+	// name of expression (name of operator or component or string)
+	const_Str3 name;
 
-    // used to store the ID of an operation.
-    enum ID_TWSF ID;
+	// used to store the ID of an operation.
+	enum ID_TWSF ID;
 
-    // type of the expression (AOPERATOR, ACONSTANT, AFUNCTION, ...)
-    int type;
+	// type of the expression (AOPERATOR, ACONSTANT, AFUNCTION, ...)
+	int type;
 
-    // what the previous item type must be for valid syntax
-    int previous;
+	// what the previous item type must be for valid syntax
+	int previous;
 
-    // precedence level, used when adding a new expression
-    int precedence;
+	// precedence level, used when adding a new expression
+	int precedence;
 
-    // the component that owns this expression
-    struct _Component *component;
+	// the component that owns this expression
+	struct _Component *component;
 
-    //union{
+	//union{
 
-    // used for when expression is a call to a component
-    struct _Component *call_comp;
+	// used for when expression is a call to a component
+	struct _Component *call_comp;
 
-    // used by expression_to_operation() for replacement
-    const_value ptr_to_lhs;
+	// used by expression_to_operation() for replacement
+	const_value ptr_to_lhs;
 
-    int param; // used to store the position of a parameter
+	int param; // used to store the position of a parameter
 
-    int outsider; // ID of outsider component call
+	int outsider; // ID of outsider component call
 
-    //};
+	//};
 
-    // = 0 => outsider dependent (default)
-    // = 2 => parameter dependent (inside a function)
-    // = 1 => independent, so can be made constant
-    int info;
+	// = 0 => outsider dependent (default)
+	// = 2 => parameter dependent (inside a function)
+	// = 1 => independent, so can be made constant
+	int info;
 
-    // used by expression_destroy()
-    bool deleted;
+	// used by expression_destroy()
+	bool deleted;
 } Expression;
 
 
 enum COMP_STATE {
-    ISPARSE, // I have been parsed
-    DOPARSE, // I have changed, parse me
-    NOPARSE, // I have not changed, leave me alone
-    ISFOUND, // I have been found in my container
-    DOFOUND, // I have been found but was DOPARSE
-    NOFOUND, // I have been placed on death sentence
-    CREATED  // I have been created to serve YKW...
+	ISPARSE, // I have been parsed
+	DOPARSE, // I have changed, parse me
+	NOPARSE, // I have not changed, leave me alone
+	ISFOUND, // I have been found in my container
+	DOFOUND, // I have been found but was DOPARSE
+	NOFOUND, // I have been placed on death sentence
+	CREATED  // I have been created to serve YKW...
 };
 
 enum COMP_ACCESS {
-    ACCESS_PRIVATE,     // in same container
-    ACCESS_ENCLOSED,    // have same parents
-    ACCESS_PROTECTED,   // have same grandpa
-    ACCESS_PUBLIC,      // anyone anywhere
-    ACCESS_REPLACE
+	ACCESS_PRIVATE,     // in same container
+	ACCESS_ENCLOSED,    // have same parents
+	ACCESS_PROTECTED,   // have same grandpa
+	ACCESS_PUBLIC,      // anyone anywhere
+	ACCESS_REPLACE
 };
 
 static inline /*const*/ char* access2str (enum COMP_ACCESS access)
 {
-    switch(access) {
-        case ACCESS_PRIVATE:   return "Private";
-        case ACCESS_ENCLOSED:  return "Enclosed";
-        case ACCESS_PROTECTED: return "Protected";
-        case ACCESS_PUBLIC:    return "Public";
-        case ACCESS_REPLACE:   return "Replace";
-        default: return "NULL_ACCESS";
-    }
+	switch(access) {
+		case ACCESS_PRIVATE:   return "Private";
+		case ACCESS_ENCLOSED:  return "Enclosed";
+		case ACCESS_PROTECTED: return "Protected";
+		case ACCESS_PUBLIC:    return "Public";
+		case ACCESS_REPLACE:   return "Replace";
+		default: return "NULL_ACCESS";
+	}
 }
 
 
@@ -104,64 +104,64 @@ typedef struct _Component Container;
 
 typedef struct _Component
 {
-    Str3 name1;
-    Str3 name2;
+	Str3 name1;
+	Str3 name2;
 
-    Str3 text1; // expression of main component,
-    Str3 text2; // to be parsed to produce oper2
+	Str3 text1; // expression of main component,
+	Str3 text2; // to be parsed to produce oper2
 
-    enum COMP_ACCESS access1; // access control type
-    enum COMP_ACCESS access2; // see enum COMP_ACCESS above
+	enum COMP_ACCESS access1; // access control type
+	enum COMP_ACCESS access2; // see enum COMP_ACCESS above
 
-    int replace; // count of ACCESS_REPLACE overrides
+	int replace; // count of ACCESS_REPLACE overrides
 
-    enum COMP_STATE state; // see enum COMP_STATE above
+	enum COMP_STATE state; // see enum COMP_STATE above
 
-    Container *parent; // containing container
-
-
-    // used when component is a function:
-    uint32_t para1[200]; // the function parameter.
-    uint32_t para2[200]; // para[0] = 1 + number of paras.
-
-    // if para[0]==1 then function has 0 parameter.
-    // if para[0]==0 then component is a variable.
-    // function can have at most 255 parameters.
-
-    // used when component is a variable:
-    value constant;     // obtained during evaluation.
-    long  instance;     // the evaluation instance.
-    Container *caller;  // the used calling container.
+	Container *parent; // containing container
 
 
-    // operations-array obtained from parsing text2:
-    value oper1; // this is what gets evaluated
-    value oper2; // must assert(oper && *oper)
+	// used when component is a function:
+	uint32_t para1[200]; // the function parameter.
+	uint32_t para2[200]; // para[0] = 1 + number of paras.
 
-    // the expected result value structure
-    uint32_t expc1[200];
-    uint32_t expc2[200];
+	// if para[0]==1 then function has 0 parameter.
+	// if para[0]==0 then component is a variable.
+	// function can have at most 255 parameters.
 
-    // used by the ':=' operator during evaluation
-    AVLT replacement;
-
-    AVLT depOnMe; // components that depend on me
-    AVLT depend1; // components depended upon by me
-    AVLT depend2;
+	// used when component is a variable:
+	value constant;     // obtained during evaluation.
+	long  instance;     // the evaluation instance.
+	Container *caller;  // the used calling container.
 
 
-    // used when component is a container:
+	// operations-array obtained from parsing text2:
+	value oper1; // this is what gets evaluated
+	value oper2; // must assert(oper && *oper)
 
-    Str3 rfet1;         // Rhyscitlem Function
-    Str3 rfet2;         // Expression Text (RFET)
+	// the expected result value structure
+	uint32_t expc1[200];
+	uint32_t expc2[200];
 
-    Container *type1;   // the inherited container
-    Container *type2;   // from: type = "<name>";
+	// used by the ':=' operator during evaluation
+	AVLT replacement;
 
-    AVLT inherits;      // inheriting components
-    AVLT inners;        // inner components
+	AVLT depOnMe; // components that depend on me
+	AVLT depend1; // components depended upon by me
+	AVLT depend2;
 
-    void* owner;        // used by an external program
+
+	// used when component is a container:
+
+	Str3 rfet1;         // Rhyscitlem Function
+	Str3 rfet2;         // Expression Text (RFET)
+
+	Container *type1;   // the inherited container
+	Container *type2;   // from: type = "<name>";
+
+	AVLT inherits;      // inheriting components
+	AVLT inners;        // inner components
+
+	void* owner;        // used by an external program
 } Component;
 
 #define c_type(c)       ( (c)->name2.ptr ? (c)->type2      : (c)->type1  )

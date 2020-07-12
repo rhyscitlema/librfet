@@ -1,7 +1,7 @@
 #ifndef _OPERATIONS_H
 #define _OPERATIONS_H
 /*
-    operations.h
+	operations.h
 */
 #include "structures.h"
 
@@ -10,26 +10,26 @@ void operations_init (value stack);
 
 enum OPER_INFO_MASK
 {
-    SkipClimbUp     = 0x001,
-    RightAssoct     = 0x002,
-    OPENBRACKET     = 0x004,
-    CLOSEBRACKET    = 0x008,
+	SkipClimbUp     = 0x001,
+	RightAssoct     = 0x002,
+	OPENBRACKET     = 0x004,
+	CLOSEBRACKET    = 0x008,
 
-    ACONSTANT       = 0x010,
-    AVARIABLE       = 0x020,
-    AFUNCTION       = 0x040,
-    APARAMTER       = 0x080,
+	ACONSTANT       = 0x010,
+	AVARIABLE       = 0x020,
+	AFUNCTION       = 0x040,
+	APARAMTER       = 0x080,
 
-    ACOMMA          = 0x100,
-    ABASIC          = 0x200,
-    ACOMPARE        = 0x400,
-    ALOGICAL        = 0x800,
-    AOPERATOR       = (ACOMMA | ABASIC | ACOMPARE | ALOGICAL),
+	ACOMMA          = 0x100,
+	ABASIC          = 0x200,
+	ACOMPARE        = 0x400,
+	ALOGICAL        = 0x800,
+	AOPERATOR       = (ACOMMA | ABASIC | ACOMPARE | ALOGICAL),
 
-    ALEAVE          = (CLOSEBRACKET | ACONSTANT | AVARIABLE | APARAMTER),
-    NOTLEAVE        = (OPENBRACKET | AOPERATOR),
+	ALEAVE          = (CLOSEBRACKET | ACONSTANT | AVARIABLE | APARAMTER),
+	NOTLEAVE        = (OPENBRACKET | AOPERATOR),
 
-    HIGHEST = 50    // highest operation precedence level
+	HIGHEST = 50    // highest operation precedence level
 };
 
 
