@@ -126,8 +126,8 @@ bool inherits_remove (Component *component)
     bool remove = list.size==1 ||
                   wait_for_confirmation(
                     L"Confirm removal", message);
-    if(remove)
-    {   void* node = list_tail(&list);
+    if(remove){
+        void* node = list_tail(&list);
         for( ; node!=NULL; node = list_prev(node))
             component_destroy(*(Component**)node);
     }
@@ -186,8 +186,8 @@ void component_print (const char* text, int indent, const Component *component)
 
     if(*component->para1)
         printf("%s component->para1     = true\n", str);
-    if(*component->para2)
-       {printf("%s component->para2     = true\n", str);}
+    if(*component->para2){
+        printf("%s component->para2     = true\n", str);}
 
         printf("%s component->access    = %s\n", str, access2str(c_access(component)));
         printf("%s component->state     = %s\n", str, state2str(component->state));
@@ -235,69 +235,63 @@ void component_print (const char* text, int indent, const Component *component)
 
 bool CheckStr3 (const_Str3 str)
 {
-  bool success = false;
-  while(true) // not a loop
-  {
-    if(strEnd3(str)) { success=true; break; }
-    if(str.ptr==NULL && str.end!=NULL) {assert(false); break;}
+    bool success = false;
+    do{
+        if(strEnd3(str)) { success=true; break; }
+        if(str.ptr==NULL && str.end!=NULL) {assert(false); break;}
 
-    lchar* lchr = str.ptr->prev;
-    if(lchr && lchr->next != str.ptr) {assert(false); break;}
+        lchar* lchr = str.ptr->prev;
+        if(lchr && lchr->next != str.ptr) {assert(false); break;}
 
-    while(true)
-    {   lchr = str.ptr->next;
-        if(lchr && lchr->prev != str.ptr) {assert(false && "Str3 pointers are invalid"); break;}
-        if(strEnd3(str)) { success = true; break; }
-        else if(lchr==NULL) {assert(false && "mallocated string does not end with '\0'."); break;}
-        str.ptr = lchr;
-    }
-    break;
-  }
-  return success;
+        while(true)
+        {
+            lchr = str.ptr->next;
+            if(lchr && lchr->prev != str.ptr) {assert(false && "Str3 pointers are invalid"); break;}
+            if(strEnd3(str)) { success = true; break; }
+            else if(lchr==NULL) {assert(false && "mallocated string does not end with '\0'."); break;}
+            str.ptr = lchr;
+        }
+    }while(0);
+    return success;
 }
 
 
 static bool CheckAVLT (const AVLT tree)
 {
-  bool success = avl_valid(&tree);
-  assert(success && "CheckAVLT() has failed failed");
-  return success;
+    bool success = avl_valid(&tree);
+    assert(success && "CheckAVLT() has failed failed");
+    return success;
 }
 
 
 static bool CheckPara (const_value vst)
 {
-  bool success = false;
-  while(true) // not a loop
-  {
-    if(!vst) { success=true; break; }
-
-    success = true;
-    break;
-  }
-  return success;
+    bool success = false;
+    do{
+        if(!vst) { success=true; break; }
+        // ... ...
+        success = true;
+    }while(0);
+    return success;
 }
 
 
 static bool CheckOper (const_value opr)
 {
-  bool success = false;
-  while(true) // not a loop
-  {
-    if(!opr) { success=true; break; }
-
-    success = true;
-    break;
-  }
-  return success;
+    bool success = false;
+    do{
+        if(!opr) { success=true; break; }
+        // ... ...
+        success = true;
+    }while(0);
+    return success;
 }
 
 
 bool CheckComponent (Component* component, bool finalised)
 {
   bool success = false;
-  while(true) // not a loop
-  {
+  do{
     if(!component) { success=true; break; }
     if(finalised)
     {   if(component->name2.ptr) {assert(false); break;}
@@ -331,21 +325,24 @@ bool CheckComponent (Component* component, bool finalised)
 
     node = avl_min(&component->inherits);
     for( ; node != NULL; node = avl_next(node))
-    {   Component* c = *(Component**)node;
+    {
+        Component* c = *(Component**)node;
         if(c->type1 != component) {assert(c->type1 == component); break;}
     }
 
     node = avl_min(&component->depOnMe);
     for( ; node != NULL; node = avl_next(node))
-    {   Component* c = *(Component**)node;
+    {
+        Component* c = *(Component**)node;
         if(!avl_do(AVL_FIND, &c->depend1, &component, 0, 0, pointer_compare)
-      /*&& !avl_do(AVL_FIND, &c->depend2, &component, 0, 0, pointer_compare)*/)
+        /*&& !avl_do(AVL_FIND, &c->depend2, &component, 0, 0, pointer_compare)*/)
             {assert(false && "error on AVL_FIND  c->dependX  &component"); break;}
     }
 
     node = avl_min(&component->depend1);
     for( ; node != NULL; node = avl_next(node))
-    {   Component* c = *(Component**)node;
+    {
+        Component* c = *(Component**)node;
         if(!avl_do(AVL_FIND, &c->depOnMe, &component, 0, 0, pointer_compare))
             {assert(false && "error on AVL_FIND  c->depOnMe  &component"); break;}
     }
@@ -358,15 +355,15 @@ bool CheckComponent (Component* component, bool finalised)
 
     node = avl_min(&component->inners);
     for( ; node != NULL; node = avl_next(node))
-    {   Component* c = (Component*)node;
-        if(c->parent != component) {
-            assert(c->parent == component); break; }
+    {
+        Component* c = (Component*)node;
+        if(c->parent != component)
+            { assert(c->parent == component); break; }
         if(!CheckComponent(c, finalised)) {assert(false); break;} // recursive call
     }
 
     success = true;
-    break;
-  }
+  }while(0);
   return success;
 }
 

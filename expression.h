@@ -30,15 +30,15 @@ value parseExpression (value stack, const_Str3 strExpr, Component *component);
 
 
 typedef struct _OperEval { // NOTE: never change this.
-    uint8_t  params; // number of parameters to function call
+    uint8_t  paras;  // number of parameters to function call
     uint8_t  input;  // user input ID used for outsider calls
-    uint16_t recurs; // number of recursive calls (union with:
-  //uint16_t start;  // relative offset to start of evaluation)
+  //uint16_t recurs; // number of recursive calls (union with:
+    uint16_t start;  // relative offset to start of evaluation)
     uint32_t result; // -ve offset to final location of result
     uint32_t stack;  // -ve offset to previous stack pointer
     uint32_t p_try;  // -ve offset to previous 'try' pointer
-    uint64_t opers;  // pointer to previous opers array
-    uint64_t caller; // pointer to initial caller container
+    const_value opers; // pointer to previous opers array
+    Container* caller; // pointer to initial caller container
 } OperEval; // see component_evaluate() in component.c
 #define OperEvalSize (sizeof(OperEval)/sizeof(uint32_t))
 
@@ -51,18 +51,5 @@ typedef struct _OperEval { // NOTE: never change this.
 */
 value operations_evaluate (value stack, const_value oper);
 
-
-static inline void* GetPtr (const_value v)
-{
-    uint64_t p = v[0];
-    return (void*)(intptr_t)( (p<<32) | v[1] );
-}
-
-static inline void SetPtr (value v, const void* ptr)
-{
-    uint64_t p = (intptr_t)ptr;
-    v[1] = (uint32_t)p;
-    v[0] = (uint32_t)(p >> 32);
-}
 
 #endif

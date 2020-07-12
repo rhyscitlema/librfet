@@ -545,7 +545,7 @@ value parseExpression (value stack, const_Str3 strExpr, Component *component)
             if(strEnd3(current->name)) current->name = str;
         }
 
-        if(current->ID == Replacement){
+        if(nextItem->ID == Replacement){
             assert(current->parent->type & OPENBRACKET);
             current->name.end = current->name.ptr;
             current->name.ptr = current->parent->name.end;
@@ -650,9 +650,8 @@ static value expression_to_operation (const Expression *expression, value stack)
         break;
 
     case SET_PARAMTER:
-        v[1] = expression->param;
-        v = setOpers(v, ID, 1);
-        break;
+        setOpers(v, ID, expression->param & 0xFFFF);
+        v+=1; break;
 
     case SET_REPL_LHS:
         for(expr = expression; expr; expr = expr->parent)
@@ -675,9 +674,9 @@ static value expression_to_operation (const Expression *expression, value stack)
         v[1] = v-w;
         v = setOpers(v, ReplaceRecord, 1);
 
-        memcpy(w+1, &expression->name, sizeof(expression->name));
-        memcpy(w+1+4, &expression->component, sizeof(Component*));
-        memset(w+1+4+2, 0, sizeof(long)); // for evaluation_instance
+        *(const_Str3*)(w+1) = expression->name;
+        *(Component**)(w+1+4) = expression->component;
+        *(long*)(w+1+4+2) = 0; // for evaluation_instance
         w[1+4+2+2  ] = w - expression->ptr_to_lhs; // offset to LHS code
         w[1+4+2+2+1] = v - w; // offset to after the RHS code
         setOpers(w, ID, 4+2+2+1+1);
@@ -695,7 +694,7 @@ static value expression_to_operation (const Expression *expression, value stack)
         }
         EXPR_TO_OPER(expr->headChild)
 
-        memcpy(w+1, &expression->name, sizeof(expression->name));
+        *(const_Str3*)(w+1) = expression->name;
         *(w+1+4) = v+1 - w; // set amount by which to skip
         setOpers(w, ConditionAsk, 5);
 
@@ -710,7 +709,7 @@ static value expression_to_operation (const Expression *expression, value stack)
         ok=false; break;
 
     case Function_try:
-        memcpy(v+1, &expression->name, sizeof(expression->name));
+        *(const_Str3*)(v+1) = expression->name;
         v = setOpers(v, ID, 4);
         expr = expression->headChild;
         if(expr->ID==CommaSeparator)
@@ -736,8 +735,8 @@ static value expression_to_operation (const Expression *expression, value stack)
         EXPR_TO_OPER(expression->lastChild)
         w = (expression->headChild != expression->lastChild)?v:0;
         if(w){ EXPR_TO_OPER(expression->headChild) }
-        memcpy(v+1, &expression->name, sizeof(expression->name));
-        memcpy(v+1+4, &expression->component, sizeof(Component*));
+        *(const_Str3*)(v+1) = expression->name;
+        *(Component**)(v+1+4) = expression->component;
         if(expression->type & AFUNCTION) ID = SET_DOT_FUNC;
         v = setOpers(v, ID, 4+2);
         break;
@@ -753,13 +752,14 @@ static value expression_to_operation (const Expression *expression, value stack)
         for(expr = expression->headChild; expr; expr = expr->nextSibling)
         {   EXPR_TO_OPER(expr)
         } if(!ok) break;
-        w = v+1;
-        memcpy(w, &expression->name, sizeof(expression->name)); w+=4;
+
+        *(const_Str3*)(v+1) = expression->name;
+        w = v+1+4;
 
         switch(ID)
         {
         case SET_OUTSIDER: *w = expression->outsider; w+=1; break;
-        case SET_VAR_FUNC: memcpy(w, &expression->call_comp, sizeof(Component*)); w+=2; break;
+        case SET_VAR_FUNC: *(Component**)w = expression->call_comp; w+=2; break;
         default: break;
         }
         v = setOpers(v, ID, w-v-1);
@@ -771,8 +771,8 @@ static value expression_to_operation (const Expression *expression, value stack)
         if(!ok) v = vpcopy(stack, v);
     else
     {   w = v+1;
-        const Component* c = expression->component;
-        if(c) { memcpy(w, &c, sizeof(c)); w+=2; }
+        Component* c = expression->component;
+        if(c) { *(Component**)w = c; w+=2; }
 
         v = setOpers(v, 0, w-v-1); // ID=0 means END
         setVector(stack, 1, v-stack-2);

@@ -178,6 +178,7 @@ static void operation_load_word_type()
 
     operation_add( &word_type[i++] , Function_tostr     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
     operation_add( &word_type[i++] , Function_tonum     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
+    operation_add( &word_type[i++] , Function_toint     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
     operation_add( &word_type[i++] , Function_torat     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
     operation_add( &word_type[i++] , Function_toflt     , SkipClimbUp | AFUNCTION , NOTLEAVE , HIGHEST );
 
@@ -379,7 +380,7 @@ static value valueSt_compare (value v, const_value obtained, const_value expecte
     else if((a>>28)==VAL_VECTOR
         &&  (!p || !VEC_LEN(a))) return NULL;
 
-    if(p > (value)1) { p-=2; SetPtr(p, obtained); }
+    if(p > (value)1) { p-=2; *(const_value*)p = obtained; }
     return p ? p : (value)1;
 }
 
@@ -396,15 +397,18 @@ static value compare_failed (value v, const_value obtained, const_value expected
     return setMessage(w, 0, 3, argv);
 }
 
+#define OPEV(v) ((OperEval*)v)
+#define GetC(v) (*(Component**)(size_t)(v))
+
 
 value operations_evaluate (value stack, const_value oper)
 {
     assert(oper && stack);
     if(!stack || !oper || !(*oper>>28))
-        return vcopy(stack, oper); // TODO: review this line
+        return vcopy(stack, oper); // TODO: review this line in operations_evaluate()
 
-    Component *comp = 0;
-    const_value name = 0;
+    Component *comp=NULL;
+    const_Str3 name={0};
     const_Str2 argv[2];
 
     if((*oper>>28)==VAL_VECTOR) oper+=2;
@@ -412,8 +416,8 @@ value operations_evaluate (value stack, const_value oper)
     value P = stack;
     value try = P;
     value v = P + OperEvalSize; // see expression.h
-    v += P[0]>>16; // apply OperEval.start
-    P[0] &= 0xFFFF;
+    v += OPEV(P)->start;
+    OPEV(P)->start = 0;
 
     while(true) // main loop
     {
@@ -426,14 +430,14 @@ value operations_evaluate (value stack, const_value oper)
             && !error)
             {
                 // get the component that contains this expression
-                memcpy(&comp, oper+1, sizeof(comp)); assert(comp!=NULL);
+                comp = GetC(oper+1); assert(comp!=NULL);
 
                 // get to result of evaluation
                 const_value r = vGetPrev(v);
 
                 // if component has an expected result structure
                 // then check result structure vs expected
-                value e = c_expc(comp);
+                const_value e = c_expc(comp);
                 if(*e && !valueSt_compare(v, r, e, NULL))
                 {
                     // if comparison failed then get error message
@@ -459,26 +463,26 @@ value operations_evaluate (value stack, const_value oper)
                     }
                     memcpy(comp->constant, r, size*sizeof(*r));
                     comp->instance = evaluation_instance(0);
-                    comp->caller = (Container*)GetPtr(P+6);
+                    comp->caller = OPEV(P)->caller;
                 }
             }
 
             value p = P;
-            oper = (const_value)GetPtr(p+4);
-            try = p-p[3];
-            P   = p-p[2];
-            p   = (~p[1]==0) ? NULL : p-p[1]; // get final location of result
+            oper = OPEV(p)->opers;
+            try = p - OPEV(p)->p_try;
+            P   = p - OPEV(p)->stack;
+            p   = ( ~ OPEV(p)->result ) ?
+                  (p - OPEV(p)->result) : NULL; // get final location of result
 
             if(!oper)
             {
                 if(error)
                 {
-                    const_Str3 str; memcpy(&str, name, sizeof(str));
-                    if(sChar(str)=='"' || sChar(str)=='\'')
+                    if(sChar(name)=='"' || sChar(name)=='\'')
                          argv[0] = L"Error on %s at (%s,%s) in %s:\r\n%s";
                     else argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\n%s";
                     argv[1] = getMessage(vGetPrev(v));
-                    v = setMessageE(v, 0, 2, argv, str);
+                    v = setMessageE(v, 0, 2, argv, name);
                 }
                 if(p) v = vpcopy(p, v);
                 break; // quit main loop
@@ -487,7 +491,7 @@ value operations_evaluate (value stack, const_value oper)
             if(p) v = vpcopy(p, v);
             continue;
         }
-        else name = oper+1; // record where the expression's name is located
+        name = *(const_Str3*)(oper+1); // record where the expression's name
 
         if(ID==OperJustJump) { oper += 1+(a & 0xFFFF); continue; }
 
@@ -511,14 +515,13 @@ value operations_evaluate (value stack, const_value oper)
                 lchar lstr[pLen+1];
                 Str3 pathname = set_lchar_array(lstr, pLen+1, path, L"path");
 
-                const_Str3 Name;
-                memcpy(&Name, name, sizeof(Name));
+                const_Str3 Name = name;
                 lstr[pLen].chr.c = '|';
                 lstr[pLen].next = Name.ptr->next;
                 pathname.end = Name.end;
 
                 // get the component that contains this expression
-                memcpy(&comp, oper+1+4, sizeof(comp)); assert(comp!=NULL);
+                comp = GetC(oper+1+4); assert(comp!=NULL);
 
                 // get the containing container of that component
                 Container* current = c_container(comp);
@@ -566,19 +569,18 @@ value operations_evaluate (value stack, const_value oper)
         {
             if(ID==SET_VAR_FUNC)
             {
-                memcpy(&comp, oper+1+4, sizeof(comp)); assert(comp!=NULL);
+                comp = GetC(oper+1+4); assert(comp!=NULL);
                 if(comp->replace         // if is a 'replaced' component
                 || comp->state!=ISPARSE) // if before component_finalise()
                 {
-                    Container* caller = (Container*)GetPtr(P+6);
-                    const_Str3 str; memcpy(&str, name, sizeof(str));
-                    Component* c = component_find(v, caller, str, 0);
+                    Container* caller = OPEV(P)->caller;
+                    Component* c = component_find(v, caller, name, 0);
                     if(c && c_access(c)==ACCESS_REPLACE) comp = c;
                 }
 
                 // if variable already evaluated before
                 if(comp->instance == evaluation_instance(0)
-                && comp->caller == (Container*)GetPtr(P+6))
+                && comp->caller == OPEV(P)->caller)
                 {
                     v = vcopy(v, comp->constant); // then just copy it
                     oper += 1+(a & 0xFFFF);
@@ -586,11 +588,10 @@ value operations_evaluate (value stack, const_value oper)
                 }
             }
 
-            uint16_t recurs = P[0]>>16;
+            uint16_t recurs = OPEV(P)->start;
             if(++recurs == 10000) // if too many recursive calls
             {
-                const_Str3 str; memcpy(&str, name, sizeof(str));
-                setErrorE(v, L"Warning on '%s' at (%s,%s) in %s:\r\nFound too many recursive calls. Continue?", str);
+                setErrorE(v, L"Warning on '%s' at (%s,%s) in %s:\r\nFound too many recursive calls. Continue?", name);
                 if(!wait_for_confirmation(L"Warning", getMessage(v)))
                 {   v = setError(v, L"Found too many recursive calls.");
                     goto on_error;
@@ -619,16 +620,16 @@ value operations_evaluate (value stack, const_value oper)
             {
                 // push values to be recovered on return
                 // see struct OperEval in expression.h
-                p[0] = C | (P[0]&0xFF00) | ((uint32_t)recurs<<16);
-                p[1] = p-v;
-                p[2] = p-P;
-                p[3] = p-try;
+                p[0] = C | (P[0] & 0xFF00) | ((uint32_t)recurs<<16);
+                OPEV(p)->result = p-v;
+                OPEV(p)->stack = p-P;
+                OPEV(p)->p_try = p-try;
                 oper += 1+(a & 0xFFFF);     // tell return-from-call to
-                SetPtr(p+4, oper);          // point to the next operation
+                OPEV(p)->opers = oper;      // point to the next operation
 
-                if(ID==SET_DOT_CALL)                // if a container.component call
-                     SetPtr(p+6, c_container(comp));// then get new caller container
-                else SetPtr(p+6, GetPtr(P+6));      // else copy old caller
+                if(ID==SET_DOT_CALL)                                    // if a container.component call
+                     ((OperEval*)p)->caller = c_container(comp);        // then get new caller container
+                else ((OperEval*)p)->caller = ((OperEval*)P)->caller;   // else copy old caller
 
                 // finally do the component call
                 assert(c_oper(comp)!=NULL);
@@ -643,11 +644,10 @@ value operations_evaluate (value stack, const_value oper)
         }
         else if(ID==SET_PARAMTER)
         {
-            int i = oper[1];
-            assert(i < (P[0]&0xFF));
-            const_value n = (const_value)GetPtr(P-(i+1)*2);
-            v = vcopy(v, n);
-            oper += 1+(a & 0xFFFF);
+            assert((a & 0xFFFF) < OPEV(P)->paras);
+            a = ((a & 0xFFFF)+1)*2;
+            v = vcopy(v, *(const_value*)(P-a));
+            oper += 1;
             continue;
         }
         else if(ID==ConditionAsk)
@@ -669,7 +669,6 @@ value operations_evaluate (value stack, const_value oper)
             if(try==P) { try=v; oper += 1+(a & 0xFFFF); }
             else
             {
-                name = oper+1;
                 argv[0] = L"A try() inside another is not allowed.";
                 v = setMessage(v, 0, 1, argv);
                 while(true) // jump to the end of opers
@@ -701,14 +700,14 @@ value operations_evaluate (value stack, const_value oper)
                 *(w-1) = (VAL_OPERAT<<28) | (OperJustJump<<16) | (uint16_t)size;
                 memcpy(w, n, vSize(n)*sizeof(*n)); // TODO: check size limit, also use vcopy instead
             }
-            value t = (value)(size_t)(oper+1+4+2);
+            long* t = (long*)(size_t)(oper+1+4+2);
             size = evaluation_instance(0);
-            if(0!=memcmp(t, &size, sizeof(size)))
+            if(*t != size)
             {
-                memcpy(t, &size, sizeof(size));
+                *t = size;
 
-                memcpy(&comp, oper+1+4, sizeof(comp));
-                if(c_container(comp) == (Container*)GetPtr(P+6)) // check if on caller container
+                comp = GetC(oper+1+4);
+                if(c_container(comp) == OPEV(P)->caller) // check if on caller container
                 {
                     // go execute the Right Hand Size of ':='
                     oper += 1+(a & 0xFFFF);
@@ -728,7 +727,7 @@ value operations_evaluate (value stack, const_value oper)
             sameAs(setRef(setRef(v, w), u));
             if(!(*v & 1)) // if w and u are not equal
             {
-                memcpy(w, u, (v-u-1)*sizeof(*u)); // copy new LHS constant
+                memcpy(w, u, (v-u-1)*sizeof(*u)); // copy new LHS constant TODO: check for overflow
                 replacement_record(repl);
             }
             oper += 1+(a & 0xFFFF);
@@ -736,11 +735,14 @@ value operations_evaluate (value stack, const_value oper)
         }
         else if(ID==Function_print)
         {
+            value p = stack;
+            p   = ( ~ OPEV(p)->result ) ?
+                  (p - OPEV(p)->result) : NULL; // get final location of result
+
             v = VstToStr(v, PUT_NEWLINE|0, -1, -1);
             argv[0] = L"[On \"%s\" at (%s,%s) in %s]\r\n%s";
             argv[1] = getStr2(vGetPrev(v));
-            const_Str3 str; memcpy(&str, name, sizeof(str));
-            v = vpcopy(stack, setMessageE(v, 0, 2, argv, str));
+            v = vpcopy(p, setMessageE(v, 0, 2, argv, name));
             break; // quit main loop
         }
         else
@@ -848,6 +850,7 @@ value operations_evaluate (value stack, const_value oper)
 
             case Function_tostr : v = toStr(v); break;
             case Function_tonum : v = toNum(v); break;
+            case Function_toint : v = toInt(v); break;
             case Function_torat : v = toRat(v); break;
             case Function_toflt : v = toFlt(v); break;
 

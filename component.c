@@ -88,7 +88,7 @@ static void update_replace_count (Component* component, int offset)
 
 bool CheckRoot (bool success, int type)
 {
-    if(0 && type>=2)
+    if(type>=3)
     {   component_print(" |  ", 0, rootContainer);
         if(type<2) puts2(L"--------------------------------------------------------\n");
         else puts2(L"============================================================================\n");
@@ -331,6 +331,7 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
     assert(inners!=NULL);
 
     if(strEmpty3(input,0)) { setError(stack, L"Empty input."); return false; }
+    setBool(stack, true); // used by return statement at the end
 
     while(!strEnd3(input)) // while getting components
     {
@@ -396,13 +397,12 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
             nextItem = get_next_item (stack, &input, &str, 0,0);
             if(nextItem==NULL || strEnd3(input)) break;
         }
-
-        if(is_main_comp && sChar(input)=='\\' && sChar(sNext(input))=='(')
+        else if(sChar(input)=='\\' && sChar(sNext(input))=='(') // if main component as a function
         {
             is_main_comp = false;
-            input = sNext(input);
-            nextItem = get_next_item (stack, &input, &str, 0,0);
-            if(nextItem==NULL || strEnd3(input)) break;
+            input = sNext(input); // skip the '\\'
+            nextItem = get_next_item (stack, &input, &str, 0,0); // get the '('
+            assert(nextItem!=NULL);
         }
 
         if(!is_main_comp)
@@ -424,12 +424,12 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
                 str.end = input.ptr;    // set end at after ')'
                 inner.para = str;
 
-                nextItem = get_next_item (stack, &input, &str, 0,0);
-                if(nextItem==NULL || strEnd3(input)) break;
+                nextItem = get_next_item (stack, &input, &str, 0,0); // get the '=' assignment operator
+                if(!nextItem) { str = input; assert(strEnd3(input)); }
             }
 
             /* Step 4: final check for a '=' assignment operator */
-            if(sChar(str) != '=')
+            if(nextItem==NULL || sChar(str) != '=')
             { setErrorE(stack, L"Error on '%s' at (%s,%s) in %s:\r\nExpected assignment '=' instead.", str); break; }
         }
         else is_main_comp = false;
@@ -448,7 +448,7 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
         inner.text = str;
         list_tail_push(inners, list_new(&inner, sizeof(inner)));
     }
-    return strEnd3(input); // return true if no error
+    return (*stack >> 28)!=VAL_MESSAGE; // return true if no error
 }
 
 
@@ -693,8 +693,7 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
     const_Str3 type = {0};
     const_Str2 argv[2];
 
-    while(true) // not a loop
-    {
+    do{
         int i=0; container = parent;
         for( ; container != rootContainer; container = container->parent) i++;
         if(i>=MAX_LINEAGE) { setErrorE(stack, L"Error at (%2,%3) in %4:\r\nInner container is too deep down the lineage.", text); break; }
@@ -804,10 +803,10 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
         else container->type2 = NULL; // else this container does not inherit
 
         success = true;
-        break;
-    }
-    if(container)
-    {   container->rfet2 = text; text=C37(NULL);
+    }while(0);
+
+    if(container){
+        container->rfet2 = text; text=C37(NULL);
         dependence_notify(container);
     }
     // note: this call must always be done so to free innerFunctions and innerContainers
@@ -855,8 +854,10 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 
         if(0==strcmp31(name,"main"))
         {
-            if(current==rootContainer)
-            { current=NULL; setError(stack, L"Error: root has no main...!"); }
+            if(current==rootContainer){
+                current=NULL;
+                setError(stack, L"Error: root has no main...!");
+            }
             break;
         }
         Container *from = current;
@@ -944,7 +945,8 @@ Str2 container_path_name (value stack, const Container* container)
     Str2 out = (Str2)(stack+2);
     if(i==0) *out = 0;
     while(i--)
-    {   *out++ = '|';
+    {
+        *out++ = '|';
         out = strcpy23(out, c_name(cont[i]));
     }
     onSetStr2(stack, out);
@@ -997,25 +999,24 @@ value component_evaluate (value stack,
                           Component *component,
                           const_value argument)
 {
-    if(!component)
-    {   stack = vnext(stack);
+    if(!component){
+        stack = vnext(stack);
         assert(VERROR(stack));
         return stack;
     }
     if(component->state==NOFOUND)
-        return setError(stack, L"Error: component->state==NOFOUND.");
+        return setError(stack, L"Error in component_evaluate(): component->state==NOFOUND.");
     assert(c_oper(component)!=NULL);
 
     // see struct OperEval inside expression.h
     memset(stack, 0, sizeof(OperEval));
-    SetPtr(stack+6, caller);
+    ((OperEval*)stack)->caller = caller;
 
     // prepare for a custom SET_VAR_FUNC operation
     value oper = stack + OperEvalSize;
     value v = oper;
-    const_Str3 name = c_name(component);
-    memcpy(v+1, &name, sizeof(name));
-    memcpy(v+1+4, &component, sizeof(component));
+    *(const_Str3*)(v+1) = c_name(component);
+    *(Component**)(v+1+4) = component;
     v = setOpers(v, SET_VAR_FUNC, 4+2);
     v = setOpers(v, 0, 0);
 
@@ -1024,7 +1025,7 @@ value component_evaluate (value stack,
     else v = setAbsRef(v, vGet(argument));
 
     // relative offset to start of evaluation
-    stack[0] = (v - stack - OperEvalSize)<<16;
+    ((OperEval*)stack)->start = v - stack - OperEvalSize;
 
     return operations_evaluate(stack, oper);
 }
@@ -1051,7 +1052,8 @@ static void replace_text (Str3 from, Str3 to)
 
     chr = from.ptr->next; // skip 1st char
     if(chr != from.end)
-    {   from.end->prev->next = NULL; // prepare to free lchar
+    {
+        from.end->prev->next = NULL; // prepare to free lchar
         chr->prev = NULL; str3_free(C37(chr));
     }
     from.ptr->next = b ? to.ptr : from.end;
@@ -1064,8 +1066,10 @@ static void replace_text (Str3 from, Str3 to)
 
 static long _evaluation_instance = 0;
 long evaluation_instance (bool increment)
-{   if(increment) _evaluation_instance++;
-    return _evaluation_instance; }
+{
+    if(increment) _evaluation_instance++;
+    return _evaluation_instance;
+}
 
 void replacement_record (const_value repl)
 {
@@ -1130,8 +1134,8 @@ void rfet_init (size_t stack_size)
         if(stack_size < 10000) stack_size = 10000;
 
         void* mem = _realloc (_stackArray, stack_size*sizeof(*_stackArray), "stackArray");
-        if(mem)
-        {   _stackSize = stack_size;
+        if(mem){
+            _stackSize = stack_size;
             _stackArray = (value)mem;
         }
         operations_init(stackArray());
