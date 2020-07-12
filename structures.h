@@ -9,7 +9,7 @@
 #include <_malloc.h>
 #include <_texts.h>
 #include <list.h>
-#include <avl.h>
+#include <tree.h>
 
 size_t stackSize();
 value stackArray();
@@ -143,11 +143,11 @@ typedef struct _Component
 	uint32_t expc2[200];
 
 	// used by the ':=' operator during evaluation
-	AVLT replacement;
+	Tree replacement;
 
-	AVLT depOnMe; // components that depend on me
-	AVLT depend1; // components depended upon by me
-	AVLT depend2;
+	Tree depOnMe; // components that depend on me
+	Tree depend1; // components depended upon by me
+	Tree depend2;
 
 
 	// used when component is a container:
@@ -158,8 +158,8 @@ typedef struct _Component
 	Container *type1;   // the inherited container
 	Container *type2;   // from: type = "<name>";
 
-	AVLT inherits;      // inheriting components
-	AVLT inners;        // inner components
+	Tree inherits;      // inheriting components
+	Tree inners;        // inner components
 
 	void* owner;        // used by an external program
 } Component;

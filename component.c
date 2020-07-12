@@ -14,10 +14,10 @@ List* container_list() { return &_container_list; }
 static Container _rootContainer;
 static Container *rootContainer = NULL; // see component_new()
 
-int pointer_compare (const void* key1, const void* key2, const void* arg)
+int pointer_compare (const ITEM* item1, const ITEM* item2, const void* arg)
 {
-	const void* a = *(const void**)key1;
-	const void* b = *(const void**)key2;
+	const void* a = *(const void**)item1;
+	const void* b = *(const void**)item2;
 	return a<b ? -1 : a>b ? +1 : 0;
 }
 
@@ -33,33 +33,48 @@ void depend_add (Component* component, Component *depend)
 {
 	assert(depend!=NULL);
 	if(component && component!=depend)
-		avl_do(AVL_ADD, &component->depend2, &depend,
-			sizeof(Component*), NULL, pointer_compare);
+		tree_do(
+			TREE_ADD,
+			&component->depend2,
+			&depend,
+			sizeof(Component*),
+			NULL,
+			pointer_compare);
 }
 
 
 /* read: I 'depend', am depended upon by 'component' */
-static void depend_notify (AVLT* depend, const Component *component)
+static void depend_notify (Tree* depend, const Component *component)
 {
-	void* node = avl_min(depend);
-	for( ; node != NULL; node = avl_next(node))
+	void* node = tree_first(depend);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
-		avl_do(AVL_ADD, &c->depOnMe, &component,
-			sizeof(component), NULL, pointer_compare);
+		tree_do(
+			TREE_ADD,
+			&c->depOnMe,
+			&component,
+			sizeof(component),
+			NULL,
+			pointer_compare);
 	}
 }
 
 
 /* read: I 'depend', am not depended upon by 'component' */
-void depend_denotify (AVLT* depend, const Component *component)
+void depend_denotify (Tree* depend, const Component *component)
 {
-	void* node = avl_min(depend);
-	for( ; node != NULL; node = avl_next(node))
+	void* node = tree_first(depend);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
-		avl_do(AVL_DEL, &c->depOnMe, &component,
-			sizeof(component), NULL, pointer_compare);
+		tree_do(
+			TREE_DEL,
+			&c->depOnMe,
+			&component,
+			sizeof(component),
+			NULL,
+			pointer_compare);
 	}
 }
 
@@ -195,22 +210,23 @@ static void component_finalise (Component *component, bool success)
 				component->rfet1 = r2;
 				component->rfet2 = C37(NULL);
 
-				if(component->type1 != component->type2){
-					if(component->type1 && !avl_do(AVL_DEL, &component->type1->inherits, &component, 0,0,0)) {assert(false);}
-					if(component->type2 &&  avl_do(AVL_ADD, &component->type2->inherits, &component, 0,0,0)) {assert(false);}
+				if(component->type1 != component->type2)
+				{
+					if(component->type1 && !tree_do(TREE_DEL, &component->type1->inherits, &component, 0,0,0)) {assert(false);}
+					if(component->type2 &&  tree_do(TREE_ADD, &component->type2->inherits, &component, 0,0,0)) {assert(false);}
 				}
 				component->type1 = component->type2;
 				component->type2 = NULL;
 
 				component->access1 = component->access2;
 			}
-			avl_free(&component->replacement);
+			tree_free(&component->replacement);
 
 			depend_denotify(&component->depend1, component);
 			depend_notify  (&component->depend2, component);
-			avl_free(&component->depend1);
+			tree_free(&component->depend1);
 			component->depend1 = component->depend2;
-			avl_clear(&component->depend2);
+			tree_clear(&component->depend2);
 
 			assert(component->oper2!=NULL);
 			value_free(component->oper1);
@@ -240,8 +256,8 @@ static void component_finalise (Component *component, bool success)
 			component->oper2 = NULL;
 			*component->para2 = 0;
 
-			avl_free(&component->replacement);
-			avl_free(&component->depend2);
+			tree_free(&component->replacement);
+			tree_free(&component->depend2);
 			component->type2 = NULL;
 
 			component->state = ISPARSE;
@@ -253,13 +269,14 @@ static void component_finalise (Component *component, bool success)
 
 typedef struct { Component* component; int children; } CompDep;
 
-static AVLT dependence = { 0, 0, sizeof(CompDep), NULL, pointer_compare };
+static Tree dependence = { 0, 0, sizeof(CompDep), NULL, pointer_compare };
 
 static void dependence_notify (Component *component)
 {
 	if(!component) return;
 	CompDep cp = { component, 0 };
-	if(!avl_do(AVL_ADD, &dependence, &cp, 0,0,0))
+
+	if(!tree_do(TREE_ADD, &dependence, &cp, 0,0,0))
 		memory_alloc("Dependence"); // on a new addition
 
 	if(component->state==CREATED) return;
@@ -268,50 +285,51 @@ static void dependence_notify (Component *component)
 	&& component->state!=DOFOUND)
 	   component->state =DOPARSE;
 
-	void* node = avl_min(&component->depOnMe);
-	for( ; node != NULL; node = avl_next(node))
+	void* node = tree_first(&component->depOnMe);
+	for( ; node != NULL; node = tree_next(node))
 		dependence_notify(*(Component**)node);
 }
 
 
 void dependence_finalise (bool success)
 {
-	void* ptr = avl_min(&dependence);
-	for( ; ptr!=NULL; ptr = avl_next(ptr))
+	void* ptr = tree_first(&dependence);
+	for( ; ptr!=NULL; ptr = tree_next(ptr))
 	{
 		CompDep* cp = (CompDep*)ptr;
 		Component* comp = cp->component;
-		cp = (CompDep*)avl_do(AVL_FIND, &dependence, &comp->parent, 0,0,0);
+		cp = (CompDep*)tree_do(TREE_FIND, &dependence, &comp->parent, 0,0,0);
 		if(cp) cp->children++;
 	}
 
-	ptr = avl_min(&dependence);
-	for( ; ptr!=NULL; ptr = avl_next(ptr))
+	ptr = tree_first(&dependence);
+	for( ; ptr!=NULL; ptr = tree_next(ptr))
 	{
 		CompDep* cp = (CompDep*)ptr;
 		while(cp && cp->children==0)
 		{
 			cp->children--; // prevent any future re-processing
 			Component* comp = cp->component;
-			cp = (CompDep*)avl_do(AVL_FIND, &dependence, &comp->parent, 0,0,0);
+			cp = (CompDep*)tree_do(TREE_FIND, &dependence, &comp->parent, 0,0,0);
+
 			if(cp) cp->children--;
 			component_finalise(comp, success);
 			memory_freed("Dependence");
 		}
 	}
-	avl_free(&dependence);
+	tree_free(&dependence);
 	assert(CheckRoot(true, 2));
 }
 
 
 bool dependence_parse (value stack)
 {
-	void* ptr = avl_min(&dependence);
-	for( ; ptr!=NULL; ptr = avl_next(ptr))
+	void* ptr = tree_first(&dependence);
+	for( ; ptr!=NULL; ptr = tree_next(ptr))
 		if(!component_parse(stack, *(Component**)ptr))
 			return false;
-	/*ptr = avl_min(&dependence);
-	for( ; ptr!=NULL; ptr = avl_next(ptr))
+	/*ptr = tree_first(&dependence);
+	for( ; ptr!=NULL; ptr = tree_next(ptr))
 		if(!component_evaluate(...))
 			return false;*/
 	return true;
@@ -453,8 +471,8 @@ static bool component_extract (value stack, const_Str3 input, List* inners)
 }
 
 
-static int avl_component_cmpr (const void* key1, const void* key2, const void* arg)
-{ return strcmp33( c_name((const Component*)key1), c_name((const Component*)key2) ); }
+static int tree_component_compare (const ITEM* item1, const ITEM* item2, const void* arg)
+{ return strcmp33( c_name((const Component*)item1), c_name((const Component*)item2) ); }
 
 // note: after call, set name to NULL
 static Component* component_new (Container* parent, Str3 name)
@@ -463,16 +481,16 @@ static Component* component_new (Container* parent, Str3 name)
 	if(parent==NULL){
 		assert(rootContainer==NULL);
 		component = rootContainer = &_rootContainer;
-	}else component = (Component*)avl_new(NULL, sizeof(Component));
+	}else component = (Component*)tree_new(NULL, sizeof(Component));
 	memory_alloc("Component");
 	component->parent = parent;
 	component->state = CREATED;
 	component->name2 = name;
-	component->inherits.keysize = sizeof(Component*);
+	component->inherits.itemsize = sizeof(Component*);
 	component->inherits.compare = pointer_compare;
-	component->inners.keysize = sizeof(Component);
-	component->inners.compare = avl_component_cmpr;
-	if(parent) avl_do(AVL_PUT, &parent->inners, component, 0,0,0);
+	component->inners.itemsize = sizeof(Component);
+	component->inners.compare = tree_component_compare;
+	if(parent) tree_do(TREE_PUT, &parent->inners, component, 0,0,0);
 	return component;
 }
 
@@ -501,8 +519,8 @@ static bool component_insert (value stack, Container* container, List* inners)
 	bool error = container==NULL;
 	if(container)
 	{
-		component = (Component*)avl_min(&container->inners);
-		for( ; component != NULL; component = (Component*)avl_next(component))
+		component = (Component*)tree_first(&container->inners);
+		for( ; component != NULL; component = (Component*)tree_next(component))
 		{
 			     if(component->state==ISPARSE) component->state = ISFOUND;
 			else if(component->state==DOPARSE) component->state = DOFOUND;
@@ -620,8 +638,8 @@ static bool component_insert (value stack, Container* container, List* inners)
 	}
 	if(container)
 	{
-		component = (Component*)avl_min(&container->inners);
-		for( ; component != NULL; component = (Component*)avl_next(component))
+		component = (Component*)tree_first(&container->inners);
+		for( ; component != NULL; component = (Component*)tree_next(component))
 		{
 			     if(component->state==ISFOUND) component->state = error ? ISPARSE : NOFOUND;
 			else if(component->state==DOFOUND) component->state = error ? DOPARSE : NOFOUND;
@@ -831,8 +849,8 @@ Container* container_parse (value stack, Container* parent, Str3 name, Str3 text
 /**************************************************************************************************************/
 
 
-static int avl_container_find (const void* key1, const void* key2, const void* arg)
-{ return strcmp33( *(const Str3*)key1, c_name((const Component*)key2) ); }
+static int tree_container_find (const ITEM* item1, const ITEM* item2, const void* arg)
+{ return strcmp33( *(const Str3*)item1, c_name((const Component*)item2) ); }
 
 static Container *do_container_find (value stack, Container* current, const_Str3 pathname, bool skipFirst, bool fullAccess, bool type1only)
 {
@@ -885,7 +903,7 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 		{
 			if(skipFirst) skipFirst=false;
 			else{
-				c = (Container*) avl_do (AVL_FIND, &current->inners, &name, 0, NULL, avl_container_find);
+				c = (Container*) tree_do (TREE_FIND, &current->inners, &name, 0, NULL, tree_container_find);
 				if(c!=NULL && c->state != NOFOUND)
 				{
 					enum COMP_ACCESS acc = c_access(c);
@@ -1109,7 +1127,13 @@ void replacement_record (const_value repl)
 	Component *c;
 	memcpy(&c, repl+1+4, sizeof(c));
 	c = c_container(c);
-	avl_do(AVL_ADD, &c->replacement, &repl, sizeof(repl), NULL, pointer_compare);
+	tree_do(
+		TREE_ADD,
+		&c->replacement,
+		&repl,
+		sizeof(repl),
+		NULL,
+		pointer_compare);
 }
 
 
@@ -1117,14 +1141,14 @@ long replacement (value stack, Container *c, enum REPL_OPERATION opr)
 {
 	if(c==NULL || c->replacement.size==0) return 0;
 	if(opr==REPL_COUNT) return c->replacement.size;
-	if(opr==REPL_CANCEL) avl_free(&c->replacement);
+	if(opr==REPL_CANCEL) tree_free(&c->replacement);
 	if(opr!=REPL_COMMIT) return 0;
 
 	bool exists = list_find(container_list(), NULL, pointer_compare, &c);
 	assert(exists); if(!exists) return 0;
 
-	void* node = avl_min(&c->replacement);
-	for( ; node != NULL; node = avl_next(node))
+	void* node = tree_first(&c->replacement);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		const_value repl = *(const_value*)node;
 		assert(repl!=NULL); if(repl==NULL) continue;
@@ -1146,7 +1170,7 @@ long replacement (value stack, Container *c, enum REPL_OPERATION opr)
 		// Finally perform the replacement
 		replace_text(from, to);
 	}
-	avl_free(&c->replacement);
+	tree_free(&c->replacement);
 	return 1;
 }
 

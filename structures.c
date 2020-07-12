@@ -7,26 +7,26 @@
 #include <component.h>
 
 
-static void inherits_clear (AVLT* tree)
+static void inherits_clear (Tree* tree)
 {
-	void* node = avl_min(tree);
-	for( ; node != NULL; node = avl_next(node))
+	void* node = tree_first(tree);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
 		if(c) c->type1 = NULL;
 	}
-	avl_free(tree);
+	tree_free(tree);
 }
 
-static void component_remove (AVLT* tree)
+static void component_remove (Tree* tree)
 {
-	Component *c = (Component*)avl_min(tree);
-	for( ; c != NULL; c = (Component*)avl_next(c))
+	Component *c = (Component*)tree_first(tree);
+	for( ; c != NULL; c = (Component*)tree_next(c))
 	{
 		c->parent = NULL;
 		component_destroy(c);
 	}
-	avl_free(tree);
+	tree_free(tree);
 }
 
 void component_destroy (Component *component)
@@ -37,18 +37,18 @@ void component_destroy (Component *component)
 	component_remove (&component->inners);
 	inherits_clear (&component->inherits);
 
-	void* node = avl_min(&component->depOnMe);
-	for( ; node != NULL; node = avl_next(node))
+	void* node = tree_first(&component->depOnMe);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
-		avl_do(AVL_DEL, &c->depend1, &component, 0, 0, pointer_compare);
+		tree_do(TREE_DEL, &c->depend1, &component, 0, 0, pointer_compare);
 	}
 	depend_denotify (&component->depend1, component);
 
-	avl_free (&component->depend1);
-	avl_free (&component->depend2);
-	avl_free (&component->depOnMe);
-	avl_free (&component->replacement);
+	tree_free (&component->depend1);
+	tree_free (&component->depend2);
+	tree_free (&component->depOnMe);
+	tree_free (&component->replacement);
 
 	if(component->rfet1.ptr) // if component is a container
 	{
@@ -71,8 +71,9 @@ void component_destroy (Component *component)
 	Container** owner = (Container**)component->owner;
 	if(owner && *owner==component) *owner = NULL; // NOTE: do not assert anything
 
-	if(component->type1) avl_do(AVL_DEL, &component->type1->inherits, &component, 0,0,0);
-	if(component->parent) avl_delete(&component->parent->inners, component);
+	if(component->type1) tree_do (TREE_DEL, &component->type1->inherits, &component, 0,0,0);
+
+	if(component->parent) tree_delete (&component->parent->inners, component);
 	// NOTE: last line above must really be last; also see component_remove().
 }
 
@@ -102,8 +103,8 @@ Str2 inherits_obtain (Component *component, List* list, Str2 out, const char* te
 	if(indent>=-1)
 	{
 		if(indent<0) indent--; else indent++;
-		void* node = avl_min(&component->inherits);
-		for( ; node != NULL; node = avl_next(node))
+		void* node = tree_first(&component->inherits);
+		for( ; node != NULL; node = tree_next(node))
 			out = inherits_obtain(*(Component**)node, list, out, text, indent);
 	}
 	return out;
@@ -223,8 +224,8 @@ void component_print (const char* text, int indent, const Component *component)
 	if(indent>=-1)
 	{
 		if(indent<0) indent--; else indent++;
-		void* c = avl_min((AVLT*)(size_t)&component->inners);
-		for( ; c != NULL; c = avl_next(c))
+		void* c = tree_first( (Tree*)(size_t)&component->inners );
+		for( ; c != NULL; c = tree_next(c))
 			component_print(text, indent, (Component*)c);
 	}
 }
@@ -255,10 +256,10 @@ bool CheckStr3 (const_Str3 str)
 }
 
 
-static bool CheckAVLT (const AVLT tree)
+static bool CheckTree (const Tree tree)
 {
-	bool success = avl_valid(&tree);
-	assert(success && "CheckAVLT() has failed failed");
+	bool success = tree_valid(&tree);
+	assert(success && "CheckTree() has failed failed");
 	return success;
 }
 
@@ -310,50 +311,50 @@ bool CheckComponent (Component* component, bool finalised)
 	if(!CheckPara(component->para2)) break;
 	if(!CheckOper(component->oper1)) break;
 	if(!CheckOper(component->oper2)) break;
-	if(!CheckAVLT(component->depend1)) break;
-	if(!CheckAVLT(component->depend2)) break;
-	if(!CheckAVLT(component->depOnMe)) break;
-	if(!CheckAVLT(component->inherits)) break;
-	if(!CheckAVLT(component->replacement)) break;
-	if(!CheckAVLT(component->inners)) break;
+	if(!CheckTree(component->depend1)) break;
+	if(!CheckTree(component->depend2)) break;
+	if(!CheckTree(component->depOnMe)) break;
+	if(!CheckTree(component->inherits)) break;
+	if(!CheckTree(component->replacement)) break;
+	if(!CheckTree(component->inners)) break;
 
 	void* node;
 
 	if(component->rfet1.ptr
 	&& !list_find(container_list(), NULL, pointer_compare, &component)) {assert(false); break;}
 
-	node = avl_min(&component->inherits);
-	for( ; node != NULL; node = avl_next(node))
+	node = tree_first(&component->inherits);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
 		if(c->type1 != component) {assert(c->type1 == component); break;}
 	}
 
-	node = avl_min(&component->depOnMe);
-	for( ; node != NULL; node = avl_next(node))
+	node = tree_first(&component->depOnMe);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
-		if(!avl_do(AVL_FIND, &c->depend1, &component, 0, 0, pointer_compare)
-		/*&& !avl_do(AVL_FIND, &c->depend2, &component, 0, 0, pointer_compare)*/)
-			{assert(false && "error on AVL_FIND  c->dependX  &component"); break;}
+		if(!tree_do(TREE_FIND, &c->depend1, &component, 0, 0, pointer_compare)
+		/*&& !tree_do(TREE_FIND, &c->depend2, &component, 0, 0, pointer_compare)*/)
+			{assert(false && "error on TREE_FIND  c->dependX  &component"); break;}
 	}
 
-	node = avl_min(&component->depend1);
-	for( ; node != NULL; node = avl_next(node))
+	node = tree_first(&component->depend1);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = *(Component**)node;
-		if(!avl_do(AVL_FIND, &c->depOnMe, &component, 0, 0, pointer_compare))
-			{assert(false && "error on AVL_FIND  c->depOnMe  &component"); break;}
+		if(!tree_do(TREE_FIND, &c->depOnMe, &component, 0, 0, pointer_compare))
+			{assert(false && "error on TREE_FIND  c->depOnMe  &component"); break;}
 	}
 
 	if(component->type1
-	&& !avl_do(AVL_FIND, &component->type1->inherits, &component, 0,0,0)) {assert(false); break;}
+	&& !tree_do(TREE_FIND, &component->type1->inherits, &component, 0,0,0)) {assert(false); break;}
 
 	if(component->parent
-	&& !avl_do(AVL_FIND, &component->parent->inners, component, 0,0,0)) {assert(false); break;}
+	&& !tree_do(TREE_FIND, &component->parent->inners, component, 0,0,0)) {assert(false); break;}
 
-	node = avl_min(&component->inners);
-	for( ; node != NULL; node = avl_next(node))
+	node = tree_first(&component->inners);
+	for( ; node != NULL; node = tree_next(node))
 	{
 		Component* c = (Component*)node;
 		if(c->parent != component)

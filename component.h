@@ -8,8 +8,8 @@
 
 extern List* container_list();
 
-/* key1 and key2 are void**, see the implementation inside component.c */
-int pointer_compare (const void* key1, const void* key2, const void* arg);
+/* item1 and item2 are void**, see the implementation inside component.c */
+int pointer_compare (const ITEM* item1, const ITEM* item2, const void* arg);
 
 
 /* NOTE: directly after call always set name=NULL and text=NULL */
@@ -43,7 +43,7 @@ value component_evaluate (
 void depend_add (Component* component, Component *depending);
 
 /* read: I <depend> am not depended upon by <component> */
-void depend_denotify (AVLT* depend, const Component *component);
+void depend_denotify (Tree* depend, const Component *component);
 
 bool dependence_parse (value stack);
 void dependence_finalise (bool success);
