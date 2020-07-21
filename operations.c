@@ -273,7 +273,7 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 
 		const wchar* wstr = getStr2(n);
 		i = strlen2(wstr);
-		lchar lstr[i+1];
+		lchar lstr[1000]; // [i+1]
 		Str3 path = set_lchar_array(lstr, i+1, wstr, L"path to function");
 
 		if(wstr && *wstr!='|')
@@ -300,9 +300,9 @@ static value doCall (value v) // TODO: provide a special ValueType to store the 
 		n = vNext(n);
 	}
 
-	uint32_t arg[count*4];
-	const_value m[count];
-	int len[count];
+	uint32_t arg[100*4];
+	const_value m[100];
+	int len[100];
 	for(i=0; i<count; i++)
 	{
 		t = vGet(n);
@@ -562,7 +562,7 @@ value operations_evaluate (value stack, const_value oper)
 				// construct pathname
 				const_Str2 path = getStr2(n);
 				long pLen = strlen2(path);
-				lchar lstr[pLen+1];
+				lchar lstr[1000+1]; // [pLen+1]
 				Str3 pathname = set_lchar_array(lstr, pLen+1, path, L"path");
 
 				const_Str3 Name = name;
@@ -908,12 +908,12 @@ value operations_evaluate (value stack, const_value oper)
 			case Function_asinh : v = _asinh(v); break;
 			case Function_atanh : v = _atanh(v); break;
 
-			case Function_cabs  : v = _cabs(v); break;
-			case Function_carg  : v = _carg(v); break;
-			case Function_real  : v = _real(v); break;
-			case Function_imag  : v = _imag(v); break;
-			case Function_conj  : v = _conj(v); break;
-			case Function_proj  : v = _proj(v); break;
+			case Function_cabs  : v = _CAbs(v); break;
+			case Function_carg  : v = _CArg(v); break;
+			case Function_real  : v = _Real(v); break;
+			case Function_imag  : v = _Imag(v); break;
+			case Function_conj  : v = _Conj(v); break;
+			case Function_proj  : v = _Proj(v); break;
 
 			case Function_size  : v = _size(v); break;
 			case Function_span  : v = _span(v); break;

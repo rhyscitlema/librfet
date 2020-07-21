@@ -345,7 +345,7 @@ typedef struct _Inner {
 
 static bool component_extract (value stack, const_Str3 input, List* inners)
 {
-	const Expression *nextItem;
+	const Expression *nextItem = NULL;
 	bool is_main_comp = true;
 	assert(inners!=NULL);
 
@@ -911,8 +911,8 @@ static Container *do_container_find (value stack, Container* current, const_Str3
 					{
 						if(!stack) { c=NULL; break; }
 						argv[0] = L"Error on '%s' at (%s,%s) in %s:\r\n"
-								   "Component has %s access inside %s.\r\n"
-								   "Expected at least %s access.";
+								  L"Component has %s access inside %s.\r\n"
+								  L"Expected at least %s access.";
 						Str2 msg = (Str2)(stack+10000); // +10000 space reserved for result
 						argv[1] = msg; msg = 1+strcpy21(msg, access2str(acc)); // 1+ so to skip '\0'
 						argv[3] = msg; msg = 1+strcpy21(msg, access2str(access));

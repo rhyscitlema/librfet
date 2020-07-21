@@ -16,7 +16,7 @@ const Expression* get_next_item (
 	const_Str3* strExpr,
 	const_Str3* str,
 	const Expression *currentItem,
-	Component *component);
+	Component *const component);
 
 
 /*
