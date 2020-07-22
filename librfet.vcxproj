@@ -91,7 +91,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <CompileAs>CompileAsC</CompileAs>
-      <AdditionalIncludeDirectories>..;..\..\algorithms;..\..\lib_std;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.;..\algorithms;..\lib_std;</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4204;4242;4244;4245;4255;4668;4820;</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -129,19 +129,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\component.c" />
-    <ClCompile Include="..\expression.c" />
-    <ClCompile Include="..\operations.c" />
-    <ClCompile Include="..\rfet.c" />
-    <ClCompile Include="..\structures.c" />
+    <ClCompile Include="component.c" />
+    <ClCompile Include="expression.c" />
+    <ClCompile Include="operations.c" />
+    <ClCompile Include="rfet.c" />
+    <ClCompile Include="structures.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\component.h" />
-    <ClInclude Include="..\expression.h" />
-    <ClInclude Include="..\operations.h" />
-    <ClInclude Include="..\outsider.h" />
-    <ClInclude Include="..\rfet.h" />
-    <ClInclude Include="..\structures.h" />
+    <ClInclude Include="component.h" />
+    <ClInclude Include="expression.h" />
+    <ClInclude Include="operations.h" />
+    <ClInclude Include="outsider.h" />
+    <ClInclude Include="rfet.h" />
+    <ClInclude Include="structures.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
